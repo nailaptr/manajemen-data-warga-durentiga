@@ -12,18 +12,18 @@ Aplikasi web ini mengganti pendataan warga di Excel untuk satu RW (RW 03) yang t
 | --- | --- |
 | Next.js (App Router) + TypeScript | Server Actions dan Route Handlers menggantikan controller, deploy ke Vercel tanpa konfigurasi, dan tipe dipakai dari server sampai UI. |
 | Tailwind CSS | Warna dan ukuran dari mockup dijadikan token sehingga tampilan konsisten di semua layar. |
-| shadcn/ui | Tabel, dialog, drawer, combobox, dan form siap pakai serta mudah disesuaikan dengan token tema. |
-| Prisma | Skema bertipe dan migrasi terversi, dengan `$queryRaw` berparameter untuk filter usia. |
-| PostgreSQL (Neon) | Tersedia lewat Vercel Marketplace, mendukung partial unique index dan `age()`, dan punya branch database untuk preview. |
-| Better Auth | Email + kata sandi, verifikasi email, dan reset sandi sudah tersedia, dengan field `role` dan cakupan pada tabel `users`. |
-| Zod | Satu skema validasi dipakai di browser dan di server. |
-| React Hook Form | Form besar (repeater anggota KK) tetap ringan dan terhubung ke skema Zod. |
-| TanStack Table | Pagination, sorting, dan filter di server untuk tabel dengan ribuan baris. |
-| Recharts | Bar, donut, dan piramida penduduk di dashboard tanpa pustaka grafik tambahan. |
-| SheetJS / ExcelJS | SheetJS membaca `.xlsx`/`.csv` di browser untuk import, ExcelJS menulis file export di server (asumsi sementara; lihat bagian 7). |
-| Resend | Email verifikasi akun, reset sandi, dan notifikasi pengajuan dengan konfigurasi minimal. |
-| Vitest | Unit test cepat untuk aturan bisnis, parser filter, dan normalisasi import. |
-| Playwright | E2E untuk alur kritis dan tes otomatis cakupan data (SEC-04, AC-04, AC-05). |
+| shadcn/ui (belum dipasang) | Tabel, dialog, drawer, combobox, dan form siap pakai serta mudah disesuaikan dengan token tema. |
+| Prisma 7 | Skema bertipe dan migrasi terversi, dengan `$queryRaw` berparameter untuk filter usia. Memakai driver adapter `@prisma/adapter-pg`; client dibuat ke `generated/prisma` (tidak di-commit, dibuat oleh `postinstall`). Versi `prisma`, `@prisma/client`, dan adapter dipin sama. |
+| PostgreSQL 17 | Mendukung partial unique index dan `age()`. Lokal: Docker Compose. Produksi: Neon lewat Vercel Marketplace (akun Neon belum dibuat, belum dipakai). |
+| Better Auth | Email + kata sandi, verifikasi email, dan reset sandi sudah tersedia. Dipetakan ke tabel `users`; kata sandi disimpan di tabel `account` (lihat bagian 7). Sign-up publik dimatikan. |
+| Zod | Satu skema validasi dipakai di browser dan di server. Terpasang, belum dipakai. |
+| React Hook Form (belum dipasang) | Form besar (repeater anggota KK) tetap ringan dan terhubung ke skema Zod. |
+| TanStack Table (belum dipasang) | Pagination, sorting, dan filter di server untuk tabel dengan ribuan baris. |
+| Recharts (belum dipasang) | Bar, donut, dan piramida penduduk di dashboard tanpa pustaka grafik tambahan. |
+| SheetJS / ExcelJS (belum dipasang) | SheetJS membaca `.xlsx`/`.csv` di browser untuk import, ExcelJS menulis file export di server (asumsi sementara; lihat bagian 7). |
+| Resend (belum dipasang) | Email verifikasi akun, reset sandi, dan notifikasi pengajuan dengan konfigurasi minimal. Sementara `lib/email.ts` mencetak tautan ke terminal saat dev dan melempar error di produksi. |
+| Vitest | Tes aturan bisnis, parser filter, normalisasi import, dan tes integrasi ke Postgres lokal. |
+| Playwright (belum dipasang) | E2E untuk alur kritis dan tes otomatis cakupan data (SEC-04, AC-04, AC-05). |
 
 ## 3. Struktur folder
 
@@ -31,49 +31,65 @@ Berdasarkan PRD bagian 9.3. Perubahan struktur butuh persetujuan (lihat "Cara be
 
 ```text
 app/
-  (publik)/masuk, daftar, lupa-sandi
-  (pengurus)/dashboard, cari-warga, warga, kk (baru, [id], [id]/ubah),
+  layout.tsx, globals.css   # Plus Jakarta Sans, token warna Tailwind
+  page.tsx                  # arahkan: belum masuk -> /masuk, WARGA -> /beranda, lainnya -> /dashboard
+  tidak-berwenang/          # tujuan requireRole() bila peran tidak cocok
+  (publik)/masuk, lupa-sandi, atur-ulang-sandi   # ada; `daftar` (klaim akun) belum
+  (pengurus)/dashboard      # kerangka sementara; sisanya belum:
+             cari-warga, warga, kk (baru, [id], [id]/ubah),
              pengajuan, import, pengguna (klaim), pengaturan (master, kategori-usia), log
-  (warga)/beranda, keluarga, pengajuan-saya (baru), profil
-  api/export, api/import-batch, api/auth/[...all]
+  (warga)/beranda           # kerangka sementara; sisanya belum: keluarga, pengajuan-saya (baru), profil
+  api/auth/[...all]         # ada (handler Better Auth); api/export, api/import-batch belum
 components/
-  ui/              # shadcn/ui
-  (komponen per fitur: filter, tabel, drawer, form)
+  kartu-form.tsx, tombol-keluar.tsx   # ada
+  ui/                                 # shadcn/ui, belum
 lib/
-  auth.ts          # sesi, requireRole()
-  scope.ts         # scopeWhere(user): cakupan RW/RT/KK
-  filters.ts       # satu parser filter URL -> query (dipakai dashboard + cari warga)
-  data/            # satu-satunya tempat memanggil prisma.warga / prisma.kartuKeluarga
-  import/          # parse, normalisasi, validasi
-  validators/      # skema Zod bersama
-  activity-log.ts  # penulisan activity_logs
-  mask.ts          # masking NIK / No KK
+  db.ts            # singleton PrismaClient (adapter pg), baca DATABASE_URL
+  auth.ts          # konfigurasi Better Auth + getPengguna() + requireRole(...peran)
+  auth-client.ts   # authClient untuk komponen klien
+  login-lockout.ts # hitungLoginGagal(), catatLoginGagal() (via activity_logs)
+  akun.ts          # buatAkunAktif(): satu-satunya jalan membuat akun berkata sandi (seed, skrip admin)
+  email.ts         # kirimEmail()
+  scope.ts         # scopeWhere(user): cakupan RW/RT/KK            (belum)
+  filters.ts       # satu parser filter URL -> query                (belum)
+  data/            # satu-satunya tempat memanggil prisma.warga / prisma.kartuKeluarga (belum)
+  import/          # parse, normalisasi, validasi                   (belum)
+  validators/      # skema Zod bersama                              (belum)
+  activity-log.ts  # penulisan activity_logs                        (belum)
+  mask.ts          # masking NIK / No KK                            (belum)
 prisma/
-  schema.prisma
-  migrations/
-  seed.ts
+  schema.prisma, migrations/
+  seed.ts, seed-dev-users.ts   # master data + akun uji dev
+prisma.config.ts               # skema, migrasi, perintah seed, DATABASE_URL
+generated/prisma/              # client Prisma (tidak di-commit)
+scripts/create-admin.ts        # Super Admin pertama (produksi)
 tests/
-  unit/            # Vitest
-  e2e/             # Playwright
+  integration/     # Vitest ke Postgres lokal (ada)
+  unit/            # Vitest tanpa database (belum)
+  e2e/             # Playwright (belum)
 docs/              # PRD, playbook, mockup
 ```
 
 ## 4. Perintah
 
-Skrip di bawah belum ada; dibuat di `package.json` saat inisialisasi proyek (setelah rencana disetujui). Manajer paket: pnpm (asumsi sementara).
+Manajer paket: pnpm. Postgres lokal harus jalan sebelum `pnpm test` dan `pnpm db:*`.
 
 | Keperluan | Perintah |
 | --- | --- |
-| Postgres lokal (Docker Compose) | `docker compose up -d db` |
+| Postgres lokal (Docker Compose, port 5433) | `pnpm db:up` (`docker compose up -d db`) |
 | Dev server | `pnpm dev` |
 | Build | `pnpm build` |
 | Lint | `pnpm lint` |
-| Typecheck | `pnpm typecheck` (`tsc --noEmit`) |
-| Unit test | `pnpm test` (`vitest run`) |
-| E2E test | `pnpm test:e2e` (`playwright test`) |
-| Migrasi (dev, buat migrasi baru) | `pnpm db:migrate` (`prisma migrate dev`) |
+| Typecheck | `pnpm typecheck` (`next typegen && tsc --noEmit`; typegen membuat tipe `LayoutProps`/`PageProps`) |
+| Tes (Vitest) | `pnpm test` (`vitest run`) |
+| E2E | `pnpm test:e2e` (Playwright belum dipasang, skrip belum bisa jalan) |
+| Migrasi baru (dev) | `pnpm db:migrate` (`prisma migrate dev`) |
 | Migrasi (produksi/CI) | `pnpm db:deploy` (`prisma migrate deploy`) |
-| Seed (master data, kategori usia, Super Admin, data uji) | `pnpm db:seed` (`prisma db seed`) |
+| Buat ulang client Prisma | `pnpm db:generate` (jalankan setelah mengubah `schema.prisma`; `migrate dev` tidak melakukannya) |
+| Seed (master data + akun uji dev) | `pnpm db:seed` |
+| Super Admin pertama | `ADMIN_NAMA=... ADMIN_EMAIL=... ADMIN_PASSWORD=... pnpm db:create-admin` |
+
+Variabel lingkungan (`.env`, tidak di-commit; contoh di `.env.example`): `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `SEED_DEV_PASSWORD` (min. 12 karakter; kosong berarti akun uji dilewati).
 
 ## 5. Aturan kode dan keamanan
 
@@ -116,6 +132,27 @@ Skrip di bawah belum ada; dibuat di `package.json` saat inisialisasi proyek (set
 - Export dibatasi 5.000 baris per file dan setiap export dicatat di log.
 - Pesan error klaim akun harus generik (tidak menyebut data mana yang salah), dibatasi 5 percobaan per jam.
 
+### Pola yang sudah dipakai di kode
+
+- Akses database lewat `import { prisma } from "@/lib/db"` (dari `prisma/` dan `scripts/` pakai path relatif).
+- Halaman terlindungi memanggil `requireRole("SUPER_ADMIN", ...)` dari `lib/auth.ts`. Belum masuk dialihkan ke `/masuk`; peran tidak cocok ke `/tidak-berwenang`. `getPengguna()` membaca ulang peran dan status dari database di tiap permintaan.
+- Akun berkata sandi dibuat hanya lewat `buatAkunAktif()` (`lib/akun.ts`). Sign-up Better Auth dimatikan.
+- Id Better Auth dibuat sebagai UUID (`advanced.database.generateId: "uuid"`) karena semua kunci utama bertipe `uuid`.
+- Kunci login: `hooks.before`/`hooks.after` di `lib/auth.ts` memakai `activity_logs` (aksi `LOGIN_GAGAL`, `entitas = "email"`, `entitas_id` = email huruf kecil). Berlaku untuk email apa pun agar respons tidak membuka email terdaftar.
+- Pesan galat login dipetakan ke Bahasa Indonesia di `app/(publik)/masuk/form-masuk.tsx`; pesan "lupa sandi" selalu sama.
+- Komponen halaman klien diletakkan satu folder dengan `page.tsx` (contoh `form-masuk.tsx`); komponen bersama di `components/`. Navigasi klien memakai `useRouter()` (`push` lalu `refresh`), bukan `window.location`.
+- Tabel pustaka Better Auth (`session`, `account`, `verification`) memakai nama kolom camelCase bawaan; tabel PRD memakai snake_case. Pemetaan field `users` ada di `user.fields` pada `lib/auth.ts`.
+- Constraint yang tidak bisa ditulis di Prisma (CHECK 16 digit `nik`/`no_kk`, partial unique index `one_head_per_kk`) ada di SQL migrasi `20261028175015_init`.
+- Seed idempoten (`upsert`/cek ada dulu). `prisma/seed-dev-users.ts` menolak jalan bila `NODE_ENV=production`.
+
+### Cara menulis tes (pola yang ada)
+
+- Berkas di `tests/<jenis>/*.test.ts`; konfigurasi `vitest.config.mts` (alias `@` ke akar repo, `fileParallelism: false` karena semua tes integrasi memakai satu database).
+- Nama tes dalam Bahasa Indonesia, menyebut ID aturan PRD bila ada (contoh: "(BR-02)", "(FR-AUTH-04)").
+- Tes DB memakai transaksi yang selalu di-rollback (`dalamRollback()` di `tests/integration/db-constraints.test.ts`) agar database tetap bersih. Tes yang harus melewati transaksi sendiri (Better Auth) membuat data dengan email `@contoh.test`, dan menghapusnya di `beforeAll`/`afterAll`.
+- Data uji memakai NIK/No KK berawalan `999` dan email `@contoh.test`; bukan data nyata.
+- Tes constraint memanggil SQL mentah untuk kasus yang ditolak Prisma sebelum sampai ke database (NIK bukan 16 digit, warga tanpa KK).
+
 ## 6. Definisi selesai
 
 - Sesuai ID kebutuhan di PRD, tes aturan bisnis lulus, lint dan typecheck bersih, tidak ada TODO tersembunyi, ringkasan perubahan ditulis.
@@ -130,8 +167,8 @@ Asumsi di bawah dipakai agar pengembangan jalan. Setiap asumsi bisa berubah; jik
 | --- | --- |
 | Kolom dan jumlah baris Excel saat ini | Memakai kolom template PRD 7.2; perbedaan nama kolom dijembatani wizard mapping. Batas 5.000 baris per file. |
 | Satu RW atau beberapa RW | Satu RW (RW 03 di mockup). Model data tetap menyimpan `rw` dan `rt` lewat tabel `wilayah` agar bisa berkembang. |
-| Login dengan email atau nomor HP | Login dengan email saja; `no_hp` disimpan sebagai kontak opsional. OTP SMS/WhatsApp di luar lingkup v1. |
-| Siapa Super Admin dan penanggung jawab data pribadi | Satu akun Super Admin dibuat lewat seed; penanggung jawab data diisi pengurus sebelum peluncuran. |
+| Login dengan email atau nomor HP | Login dengan email saja; `no_hp` disimpan sebagai kontak opsional. OTP SMS/WhatsApp di luar lingkup v1. Kata sandi minimal 8 karakter (bawaan Better Auth; PRD tidak menyebut angkanya). |
+| Siapa Super Admin dan penanggung jawab data pribadi | Produksi: satu akun Super Admin dibuat dengan `pnpm db:create-admin` (menolak jalan bila Super Admin aktif sudah ada). Dev: seed membuat akun uji. Penanggung jawab data diisi pengurus sebelum peluncuran. |
 | Ketua RT atau Admin RW yang memverifikasi klaim dan pengajuan | Ketua RT untuk RT-nya; Admin RW dan Super Admin boleh menggantikan (sesuai matriks PRD 2.2). |
 | Foto KK/KTP wajib untuk perubahan NIK, nama, tanggal lahir | Tidak wajib; lampiran (FR-PGJ-07, Could) ditunda. |
 | Usia minimal akun warga | 17 tahun (PRD 1.4). |
@@ -139,11 +176,23 @@ Asumsi di bawah dipakai agar pengembangan jalan. Setiap asumsi bisa berubah; jik
 | Persetujuan kebijakan privasi oleh kelurahan/hukum | Halaman Kebijakan Privasi berisi draf; persetujuan pihak luar menjadi syarat peluncuran, bukan syarat pengembangan. |
 | Estimasi durasi fase | Tidak diestimasi sampai jumlah pengembang dan kolom Excel diketahui. |
 
-Asumsi teknis lain yang perlu dikonfirmasi saat pertama dipakai: pnpm sebagai manajer paket; SheetJS untuk parse di browser dan ExcelJS untuk export di server; Prisma dipilih dibanding Drizzle; Better Auth dibanding Auth.js.
+Asumsi teknis yang masih perlu dikonfirmasi saat pertama dipakai: SheetJS untuk parse di browser dan ExcelJS untuk export di server. Sudah diputuskan dan dipakai: pnpm, Prisma, Better Auth, Docker Compose untuk database lokal.
+
+### Penyimpangan dari PRD bagian 8 yang sudah diterapkan
+
+- `users.password_hash` tidak ada; Better Auth menyimpan hash di `account.password` (`providerId = "credential"`).
+- `users.email_verified_at` (timestamp) diganti `users.email_verified` (boolean), sesuai tipe yang dipakai Better Auth.
+- `users.image` ditambahkan karena diwajibkan Better Auth; aplikasi tidak memakainya.
+- Tabel `session`, `account`, `verification` ditambahkan (PRD 8 mengizinkan tabel pustaka sesi).
+- `cacheComponents` dan `partialPrefetching` dimatikan di `next.config.ts`; dengan opsi itu build gagal pada halaman yang membaca sesi.
+- Pengiriman email produksi belum ada (Resend belum dipasang); `kirimEmail()` melempar error di produksi.
+- Sesi berakhir setelah 30 menit tidak aktif lewat `session.expiresIn` + `updateAge` (FR-AUTH-04).
+- `activity_logs.user_id` nullable agar kejadian tanpa pengguna dikenal (login gagal) tercatat.
 
 ## 8. Catatan dari mockup dan PRD yang perlu ditanyakan saat relevan
 
 - Mockup memakai huruf 14/15 px; portal warga harus 16 px (NFR-04).
-- Mockup belum menggambar: Masuk, Lupa sandi, Detail KK, Profil, Import langkah 1/2/4, serta kondisi kosong, memuat, dan error. Tanyakan sebelum merancang sendiri.
+- Halaman Masuk, Lupa sandi, dan Atur ulang sandi dibuat sebagai form sederhana (satu kartu di tengah, token warna PRD) atas persetujuan pemilik proyek karena mockup tidak ada; boleh diganti bila mockup datang.
+- Mockup belum menggambar: Detail KK, Profil, Import langkah 1/2/4, serta kondisi kosong, memuat, dan error. Tanyakan sebelum merancang sendiri.
 - Mockup Pengaturan memakai satu halaman bertab (Pendidikan, Pekerjaan, Kategori usia, RT dan RW), sedangkan PRD 5.1 menyebut dua rute (`/pengaturan/master`, `/pengaturan/kategori-usia`). Putuskan bersama sebelum membangun.
 - Seluruh nama, NIK, dan angka di mockup adalah data contoh; jangan dijadikan data seed nyata.
