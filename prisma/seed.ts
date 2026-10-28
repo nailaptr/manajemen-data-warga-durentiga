@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { prisma } from "../lib/db";
+import { seedAkunUji } from "./seed-dev-users";
 
 // Nilai awal kategori usia dari PRD 6.2; usulan, bisa diubah lewat halaman Pengaturan.
 const KATEGORI_USIA = [
@@ -68,6 +69,8 @@ async function main(): Promise<void> {
       await prisma.kategoriUsia.create({ data: { ...k, urutan: i + 1 } });
     }
   }
+
+  await seedAkunUji();
 }
 
 main()

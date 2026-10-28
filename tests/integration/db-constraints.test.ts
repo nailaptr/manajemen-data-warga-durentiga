@@ -32,7 +32,7 @@ async function siapkanKk(tx: Tx, noKk: string) {
     data: {
       nama: "Penguji",
       email: `penguji-${noKk}@contoh.test`,
-      password_hash: "x",
+     
       role: "SUPER_ADMIN",
       status: "AKTIF",
     },
@@ -137,7 +137,7 @@ describe("constraint database", () => {
     await dalamRollback(async (tx) => {
       const wilayah = await tx.wilayah.findFirstOrThrow();
       const user = await tx.user.create({
-        data: { nama: "Penguji", email: "penguji-nokk@contoh.test", password_hash: "x", role: "SUPER_ADMIN", status: "AKTIF" },
+        data: { nama: "Penguji", email: "penguji-nokk@contoh.test", role: "SUPER_ADMIN", status: "AKTIF" },
       });
       const pendek = await tangkap(() =>
         tx.kartuKeluarga.create({
