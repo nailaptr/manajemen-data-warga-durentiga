@@ -1,0 +1,22 @@
+# Hanya untuk PostgreSQL lokal. Tidak dipakai di produksi.
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: warga
+      POSTGRES_PASSWORD: warga_lokal
+      POSTGRES_DB: warga
+      TZ: Asia/Jakarta
+      PGTZ: Asia/Jakarta
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U warga -d warga"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  db_data:
