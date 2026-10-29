@@ -12,6 +12,15 @@
   --color-teks-sekunder: #566370;
   --color-galat: #b42318;
 
+  /* Status (PRD 11.2): hijau aktif/disetujui, kuning menunggu, merah ditolak, abu nonaktif. */
+  --color-teal-muda: #d6eef2;
+  --color-sukses: #1f6b3a;
+  --color-sukses-latar: #dff3e5;
+  --color-peringatan: #7a4b00;
+  --color-peringatan-latar: #fdecc3;
+  --color-galat-latar: #fde4e1;
+  --color-nonaktif-latar: #e2e8eb;
+
   --color-background: var(--color-latar);
   --color-foreground: var(--color-teks);
   --color-card: #ffffff;
