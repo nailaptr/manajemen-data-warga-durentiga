@@ -123,7 +123,7 @@ export async function ambilKk(user: Pengguna, id: string, db: Klien = prisma) {
   });
 }
 
-function dataWarga(a: KkData["anggota"][number]) {
+export function dataWarga(a: KkData["anggota"][number]) {
   return {
     nik: a.nik,
     nama_lengkap: a.nama_lengkap,

@@ -66,7 +66,7 @@ export function menuPengurus(role: Role): KelompokMenu[] {
       item: [
         { label: "Import", href: "/import", ikon: Upload },
         { label: "Pengguna", href: "/pengguna", ikon: UserCheck },
-        { label: "Pengaturan", href: "/pengaturan/master", ikon: Settings, awalan: "/pengaturan" },
+        { label: "Pengaturan", href: "/pengaturan", ikon: Settings },
         { label: "Log", href: "/log", ikon: ScrollText },
       ],
     },

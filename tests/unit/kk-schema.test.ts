@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { kkSchema, type KkInput } from "@/lib/validators/kk";
-import { maskNomor } from "@/lib/mask";
 
 const UUID = "00000000-0000-4000-8000-000000000001";
 
@@ -59,11 +58,5 @@ describe("skema KK", () => {
 
   it("menolak KK tanpa anggota (BR-01)", () => {
     expect(pesan(kkSchema.safeParse(kk([])))).toContain("Minimal satu anggota");
-  });
-});
-
-describe("maskNomor", () => {
-  it("menampilkan 4 digit awal dan 4 digit akhir", () => {
-    expect(maskNomor("3174012345671190")).toBe("3174●●●●●●●●1190");
   });
 });

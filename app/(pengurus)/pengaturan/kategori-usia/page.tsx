@@ -1,8 +1,9 @@
-import { JudulHalaman } from "@/components/judul-halaman";
+import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { ADMIN } from "@/lib/navigasi";
 
+// Rute PRD 5.1 lama; isinya kini satu halaman bertab di /pengaturan.
 export default async function KategoriUsia() {
   await requireRole(...ADMIN);
-  return <JudulHalaman judul="Kategori Usia" />;
+  redirect("/pengaturan?tab=kategori-usia");
 }
