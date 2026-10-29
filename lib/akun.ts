@@ -9,6 +9,7 @@ interface AkunBaru {
   role: Role;
   wilayah_id?: string;
   rw?: string;
+  warga_id?: string;
 }
 
 // Satu-satunya jalan membuat akun aktif dan terverifikasi dengan kata sandi (seed, skrip Super Admin).
@@ -22,6 +23,7 @@ export async function buatAkunAktif(data: AkunBaru): Promise<string> {
       email_verified: true,
       wilayah_id: data.wilayah_id,
       rw: data.rw,
+      warga_id: data.warga_id,
       accounts: {
         create: {
           providerId: "credential",

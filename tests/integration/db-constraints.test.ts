@@ -1,21 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
-
-type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
-
-class Rollback extends Error {}
-
-// Setiap kasus berjalan di transaksi yang selalu dibatalkan, sehingga database tetap bersih.
-async function dalamRollback(fn: (tx: Tx) => Promise<void>): Promise<void> {
-  try {
-    await prisma.$transaction(async (tx) => {
-      await fn(tx);
-      throw new Rollback();
-    });
-  } catch (error) {
-    if (!(error instanceof Rollback)) throw error;
-  }
-}
+import { dalamRollback, type Tx } from "./helpers";
 
 async function tangkap(fn: () => Promise<unknown>): Promise<string | null> {
   try {
@@ -32,7 +17,6 @@ async function siapkanKk(tx: Tx, noKk: string) {
     data: {
       nama: "Penguji",
       email: `penguji-${noKk}@contoh.test`,
-     
       role: "SUPER_ADMIN",
       status: "AKTIF",
     },

@@ -92,7 +92,7 @@ export interface Pengguna {
 
 // Peran dan status dibaca ulang dari database di tiap permintaan, sehingga akun yang
 // dinonaktifkan langsung kehilangan akses tanpa menunggu sesinya habis.
-export async function getPengguna(): Promise<Pengguna | null> {
+export async function getSession(): Promise<Pengguna | null> {
   const sesi = await auth.api.getSession({ headers: await headers() });
   if (!sesi) return null;
   const pengguna = await prisma.user.findUnique({
@@ -113,7 +113,7 @@ export async function getPengguna(): Promise<Pengguna | null> {
 
 // Belum masuk -> /masuk. Sudah masuk tetapi peran tidak sesuai -> /tidak-berwenang.
 export async function requireRole(...peran: Role[]): Promise<Pengguna> {
-  const pengguna = await getPengguna();
+  const pengguna = await getSession();
   if (!pengguna) redirect("/masuk");
   if (!peran.includes(pengguna.role)) redirect("/tidak-berwenang");
   return pengguna;

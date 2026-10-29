@@ -45,12 +45,12 @@ components/
   ui/                                 # shadcn/ui, belum ada komponen
 lib/
   db.ts            # singleton PrismaClient (adapter pg), baca DATABASE_URL
-  auth.ts          # konfigurasi Better Auth + getPengguna() + requireRole(...peran)
+  auth.ts          # konfigurasi Better Auth + getSession() + requireRole(...peran)
   auth-client.ts   # authClient untuk komponen klien
   login-lockout.ts # hitungLoginGagal(), catatLoginGagal() (via activity_logs)
   akun.ts          # buatAkunAktif(): satu-satunya jalan membuat akun berkata sandi (seed, skrip admin)
   email.ts         # kirimEmail()
-  scope.ts         # scopeWhere(user): cakupan RW/RT/KK            (belum)
+  scope.ts         # scopeWhere(user, entity): cakupan RW/RT/KK; entity = "warga" | "kartu_keluarga" | "pengajuan"
   filters.ts       # satu parser filter URL -> query                (belum)
   data/            # satu-satunya tempat memanggil prisma.warga / prisma.kartuKeluarga (belum)
   import/          # parse, normalisasi, validasi                   (belum)
@@ -64,7 +64,7 @@ prisma.config.ts               # skema, migrasi, perintah seed, DATABASE_URL
 generated/prisma/              # client Prisma (tidak di-commit)
 scripts/create-admin.ts        # Super Admin pertama (produksi)
 tests/
-  integration/     # Vitest ke Postgres lokal (ada)
+  integration/     # Vitest ke Postgres lokal; helpers.ts berisi dalamRollback() dan tipe Tx
   unit/            # Vitest tanpa database (belum)
   e2e/             # Playwright (belum)
 docs/              # PRD, playbook, mockup
@@ -135,7 +135,9 @@ Variabel lingkungan (`.env`, tidak di-commit; contoh di `.env.example`): `DATABA
 ### Pola yang sudah dipakai di kode
 
 - Akses database lewat `import { prisma } from "@/lib/db"` (dari `prisma/` dan `scripts/` pakai path relatif).
-- Halaman terlindungi memanggil `requireRole("SUPER_ADMIN", ...)` dari `lib/auth.ts`. Belum masuk dialihkan ke `/masuk`; peran tidak cocok ke `/tidak-berwenang`. `getPengguna()` membaca ulang peran dan status dari database di tiap permintaan.
+- Halaman terlindungi memanggil `requireRole("SUPER_ADMIN", ...)` dari `lib/auth.ts`. Belum masuk dialihkan ke `/masuk`; peran tidak cocok ke `/tidak-berwenang`. `getSession()` membaca ulang peran dan status dari database di tiap permintaan.
+- `scopeWhere(user, entity)` (`lib/scope.ts`) mengembalikan filter Prisma untuk cakupan akses: Super Admin semua, Admin RW menurut `rw`, Ketua RT menurut `wilayah_id`, Warga hanya KK dari `warga_id` (warga yang di-soft-delete tidak mendapat apa pun). Data pengguna tidak lengkap menghasilkan filter yang tidak cocok dengan apa pun. Filter ini tidak menyaring `deleted_at` atau status; pemanggil menambahkannya sendiri. Dipakai dengan `where: { AND: [scopeWhere(user, "warga"), ...] }`.
+- Seed dev membuat empat akun (satu per peran): `superadmin@`, `adminrw@`, `ketuart01@`, `warga@contoh.test`; akun Warga terhubung ke satu KK dan warga palsu (NIK/No KK berawalan `999`).
 - Akun berkata sandi dibuat hanya lewat `buatAkunAktif()` (`lib/akun.ts`). Sign-up Better Auth dimatikan.
 - Id Better Auth dibuat sebagai UUID (`advanced.database.generateId: "uuid"`) karena semua kunci utama bertipe `uuid`.
 - Kunci login: `hooks.before`/`hooks.after` di `lib/auth.ts` memakai `activity_logs` (aksi `LOGIN_GAGAL`, `entitas = "email"`, `entitas_id` = email huruf kecil). Berlaku untuk email apa pun agar respons tidak membuka email terdaftar.
@@ -151,6 +153,8 @@ Variabel lingkungan (`.env`, tidak di-commit; contoh di `.env.example`): `DATABA
 - Nama tes dalam Bahasa Indonesia, menyebut ID aturan PRD bila ada (contoh: "(BR-02)", "(FR-AUTH-04)").
 - Tes DB memakai transaksi yang selalu di-rollback (`dalamRollback()` di `tests/integration/db-constraints.test.ts`) agar database tetap bersih. Tes yang harus melewati transaksi sendiri (Better Auth) membuat data dengan email `@contoh.test`, dan menghapusnya di `beforeAll`/`afterAll`.
 - Data uji memakai NIK/No KK berawalan `999` dan email `@contoh.test`; bukan data nyata.
+- Tes `requireRole` memalsukan `next/headers`, `next/navigation` (redirect melempar `REDIRECT:<url>`), dan `auth.api.getSession` dengan `vi.mock`/`vi.spyOn`; pengguna tetap dibuat di database sungguhan.
+- Tes cakupan membuat data lalu membatasi hasil dengan `id in [...]` agar data seed tidak ikut terhitung.
 - Tes constraint memanggil SQL mentah untuk kasus yang ditolak Prisma sebelum sampai ke database (NIK bukan 16 digit, warga tanpa KK).
 
 ## 6. Definisi selesai
