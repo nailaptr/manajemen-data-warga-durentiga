@@ -12,7 +12,7 @@ Aplikasi web ini mengganti pendataan warga di Excel untuk satu RW (RW 03) yang t
 | --- | --- |
 | Next.js (App Router) + TypeScript | Server Actions dan Route Handlers menggantikan controller, deploy ke Vercel tanpa konfigurasi, dan tipe dipakai dari server sampai UI. |
 | Tailwind CSS | Warna dan ukuran dari mockup dijadikan token sehingga tampilan konsisten di semua layar. |
-| shadcn/ui (belum dipasang) | Tabel, dialog, drawer, combobox, dan form siap pakai serta mudah disesuaikan dengan token tema. |
+| shadcn/ui | Tabel, dialog, drawer, combobox, dan form siap pakai serta mudah disesuaikan dengan token tema. Terpasang dengan style `base-nova` (`components.json`, primitif `@base-ui/react`); komponen belum ada, ditambah per kebutuhan dengan `pnpm dlx shadcn@4.22.0 add <nama>`. Komponennya mengimpor `cn` dari paket `cn` (dibuat tim shadcn), bukan `lib/utils.ts`. Token semantik shadcn dipetakan ke warna proyek di `app/globals.css`. |
 | Prisma 7 | Skema bertipe dan migrasi terversi, dengan `$queryRaw` berparameter untuk filter usia. Memakai driver adapter `@prisma/adapter-pg`; client dibuat ke `generated/prisma` (tidak di-commit, dibuat oleh `postinstall`). Versi `prisma`, `@prisma/client`, dan adapter dipin sama. |
 | PostgreSQL 17 | Mendukung partial unique index dan `age()`. Lokal: Docker Compose. Produksi: Neon lewat Vercel Marketplace (akun Neon belum dibuat, belum dipakai). |
 | Better Auth | Email + kata sandi, verifikasi email, dan reset sandi sudah tersedia. Dipetakan ke tabel `users`; kata sandi disimpan di tabel `account` (lihat bagian 7). Sign-up publik dimatikan. |
@@ -42,7 +42,7 @@ app/
   api/auth/[...all]         # ada (handler Better Auth); api/export, api/import-batch belum
 components/
   kartu-form.tsx, tombol-keluar.tsx   # ada
-  ui/                                 # shadcn/ui, belum
+  ui/                                 # shadcn/ui, belum ada komponen
 lib/
   db.ts            # singleton PrismaClient (adapter pg), baca DATABASE_URL
   auth.ts          # konfigurasi Better Auth + getPengguna() + requireRole(...peran)
