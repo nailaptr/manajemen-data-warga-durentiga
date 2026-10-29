@@ -18,7 +18,7 @@ Aplikasi web ini mengganti pendataan warga di Excel untuk satu RW (RW 03) yang t
 | Better Auth | Email + kata sandi, verifikasi email, dan reset sandi sudah tersedia. Dipetakan ke tabel `users`; kata sandi disimpan di tabel `account` (lihat bagian 7). Sign-up publik dimatikan. |
 | Zod | Satu skema validasi dipakai di browser dan di server. Terpasang, belum dipakai. |
 | React Hook Form (belum dipasang) | Form besar (repeater anggota KK) tetap ringan dan terhubung ke skema Zod. |
-| TanStack Table (belum dipasang) | Pagination, sorting, dan filter di server untuk tabel dengan ribuan baris. |
+| TanStack Table | Pagination, sorting, dan filter di server untuk tabel dengan ribuan baris. Terpasang versi 9 (`@tanstack/react-table`), API-nya beda dari v8: opsi `features: tableFeatures({ rowPaginationFeature })`, bukan `getCoreRowModel`. Baru `DataTable` yang memakainya. |
 | Recharts (belum dipasang) | Bar, donut, dan piramida penduduk di dashboard tanpa pustaka grafik tambahan. |
 | SheetJS / ExcelJS (belum dipasang) | SheetJS membaca `.xlsx`/`.csv` di browser untuk import, ExcelJS menulis file export di server (asumsi sementara; lihat bagian 7). |
 | Resend (belum dipasang) | Email verifikasi akun, reset sandi, dan notifikasi pengajuan dengan konfigurasi minimal. Sementara `lib/email.ts` mencetak tautan ke terminal saat dev dan melempar error di produksi. |
@@ -35,18 +35,25 @@ app/
   page.tsx                  # arahkan: belum masuk -> /masuk, WARGA -> /beranda, lainnya -> /dashboard
   tidak-berwenang/          # tujuan requireRole() bila peran tidak cocok
   (publik)/masuk, lupa-sandi, atur-ulang-sandi   # ada; `daftar` (klaim akun) belum
-  (pengurus)/dashboard      # kerangka sementara; sisanya belum:
-             cari-warga, warga, kk (baru, [id], [id]/ubah),
+  (pengurus)/layout.tsx     # requireRole(...PENGURUS) + KerangkaPengurus (sidebar)
+  (pengurus)/dashboard, cari-warga, warga, kk (baru, [id], [id]/ubah),
              pengajuan, import, pengguna (klaim), pengaturan (master, kategori-usia), log
-  (warga)/beranda           # kerangka sementara; sisanya belum: keluarga, pengajuan-saya (baru), profil
+             # semua rute PRD 5.1 ada, tetapi isinya baru judul halaman + requireRole
+  (warga)/layout.tsx        # requireRole("WARGA") + KerangkaWarga (header + navigasi bawah)
+  (warga)/beranda, keluarga, pengajuan-saya (baru)   # judul saja
+  profil/                   # layout memilih kerangka pengurus atau warga menurut peran (PRD 5.1: "Semua")
   api/auth/[...all]         # ada (handler Better Auth); api/export, api/import-batch belum
 components/
-  kartu-form.tsx, tombol-keluar.tsx   # ada
+  kartu-form.tsx, tombol-keluar.tsx   # form publik, tombol Keluar (prop className)
+  kerangka-pengurus.tsx, kerangka-warga.tsx   # kerangka halaman (klien, menu aktif lewat usePathname)
+  judul-halaman.tsx                   # h1 + deskripsi opsional, dipakai semua halaman
+  stat-card.tsx, status-badge.tsx, filter-chip.tsx, data-table.tsx   # komponen dasar
   ui/                                 # shadcn/ui, belum ada komponen
 lib/
   db.ts            # singleton PrismaClient (adapter pg), baca DATABASE_URL
   auth.ts          # konfigurasi Better Auth + getSession() + requireRole(...peran)
   auth-client.ts   # authClient untuk komponen klien
+  navigasi.ts      # PENGURUS/ADMIN (daftar peran), NAMA_PERAN, menuPengurus(role), MENU_WARGA, menuAktif()
   login-lockout.ts # hitungLoginGagal(), catatLoginGagal() (via activity_logs)
   akun.ts          # buatAkunAktif(): satu-satunya jalan membuat akun berkata sandi (seed, skrip admin)
   email.ts         # kirimEmail()
@@ -68,11 +75,13 @@ tests/
   unit/            # Vitest tanpa database (belum)
   e2e/             # Playwright (belum)
 docs/              # PRD, playbook, mockup
+.github/workflows/ci.yml   # CI tiap pull request
+README.md          # "Menjalankan secara lokal"
 ```
 
 ## 4. Perintah
 
-Manajer paket: pnpm. Postgres lokal harus jalan sebelum `pnpm test` dan `pnpm db:*`.
+Manajer paket: pnpm. Postgres lokal harus jalan sebelum `pnpm test` dan `pnpm db:*`. Tes memakai wilayah dari seed, jadi `pnpm db:deploy` dan `pnpm db:seed` harus sudah dijalankan.
 
 | Keperluan | Perintah |
 | --- | --- |
@@ -133,6 +142,13 @@ Variabel lingkungan (`.env`, tidak di-commit; contoh di `.env.example`): `DATABA
 - Pesan error klaim akun harus generik (tidak menyebut data mana yang salah), dibatasi 5 percobaan per jam.
 
 ### Pola yang sudah dipakai di kode
+
+- CI (`.github/workflows/ci.yml`, tiap pull request): install `--frozen-lockfile`, lint, typecheck, `db:deploy` + `db:seed`, test, dengan service Postgres 17. Variabel lingkungan diisi nilai uji di workflow; `SEED_DEV_PASSWORD` sengaja kosong sehingga akun uji dilewati.
+- Daftar peran dan menu ada di `lib/navigasi.ts`: halaman pengurus memanggil `requireRole(...PENGURUS)` atau `requireRole(...ADMIN)` (Import, Pengguna, Pengaturan, Log). Menu sidebar mengikuti PRD 5.2; menu aktif dicocokkan dengan awalan rute (`awalan` untuk Pengaturan).
+- Layout kelompok rute (`(pengurus)`, `(warga)`, `profil`) memanggil `requireRole` dan membungkus halaman dengan kerangka; tiap `page.tsx` di `(pengurus)` dan `(warga)` tetap memanggil `requireRole` sendiri (peran per halaman bisa lebih sempit dari layout). `profil/page.tsx` tidak, karena layout-nya sudah menerima semua peran.
+- Kerangka pengurus: sidebar tetap di layar lebar (`lg`), laci dengan tombol menu di layar kecil (Escape menutup). Kerangka warga: navigasi bawah tetap, lebar maksimum `max-w-xl`, huruf dasar 16 px, target sentuh minimal 44 px.
+- Komponen dasar: `StatCard` (ikon sebagai ReactNode), `StatusBadge` (status `aktif | disetujui | menunggu | ditolak | nonaktif`, teks selalu tertulis), `FilterChip` (`hrefHapus` = URL tanpa filter itu, tautan biasa), `DataTable` (komponen klien; `halaman` dan `ukuranHalaman` dari URL `?halaman=`, `total` dari server, ada keadaan kosong dan galat). Kolom `DataTable` yang dikirim dari Server Component harus data biasa (`accessorKey`, `header` string), bukan fungsi.
+- Token status (hijau, kuning, merah, abu, teal muda) ada di `app/globals.css` sebagai `--color-sukses(-latar)`, `--color-peringatan(-latar)`, `--color-galat-latar`, `--color-nonaktif-latar`, `--color-teal-muda`.
 
 - Akses database lewat `import { prisma } from "@/lib/db"` (dari `prisma/` dan `scripts/` pakai path relatif).
 - Halaman terlindungi memanggil `requireRole("SUPER_ADMIN", ...)` dari `lib/auth.ts`. Belum masuk dialihkan ke `/masuk`; peran tidak cocok ke `/tidak-berwenang`. `getSession()` membaca ulang peran dan status dari database di tiap permintaan.
