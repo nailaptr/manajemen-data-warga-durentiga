@@ -186,6 +186,7 @@ Variabel lingkungan (`.env`, tidak di-commit; contoh di `.env.example`): `DATABA
 - `import_batches.errors` berbentuk `{ gagal: [{ nomor, pesan }], dilewati: n }`; pesan tidak memuat NIK, No KK, atau tanggal lahir. Status: BERJALAN, SELESAI, GAGAL (semua baris gagal).
 - Mapping tersimpan diambil dari `import_batches` terakhir berstatus SELESAI (`mappingTerakhir()`, tanpa perubahan skema). Pilihan manual nilai pendidikan/pekerjaan tak dikenal ditambahkan ke `alias` master saat `mulai`.
 - Admin RW hanya boleh mengimpor ke RW-nya; Super Admin ke RW mana pun. RT/RW baru dibuat otomatis.
+- Normalisasi nilai Excel ada di `lib/import/normalize.ts`: `normalisasiTanggal` (nomor seri Excel, `dd/mm/yyyy`, `yyyy-mm-dd`, `dd-Mon-yy(yy)` dengan bulan Inggris/Indonesia; tahun 2 digit sampai tahun berjalan menjadi 20xx, sisanya 19xx), `normalisasiRtRw` (`RT 02` menjadi `002`), `cocokkanMaster` (nama/alias master dulu, lalu coba tanpa awalan `tamat`/`tamatan`/`lulus`/`lulusan`). Pola dari Excel asli ditambahkan di sini dengan tes data fiktif di `tests/unit/import-pola-excel.test.ts`.
 - Preview menampilkan NIK dimasking (menyimpang dari mockup). `alamat` kosong disimpan "-" untuk KK baru; nama lebih dari 100 karakter dihitung Error.
 
 ### Cara menulis tes (pola yang ada)

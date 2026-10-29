@@ -51,7 +51,18 @@ function iso(tahun: number, bulan: number, hari: number): string | null {
   return d.toISOString().slice(0, 10);
 }
 
-// Menerima: nomor seri Excel, dd/mm/yyyy (juga - atau .), dan yyyy-mm-dd (juga /). Selain itu null.
+const BULAN: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, mei: 5, may: 5, jun: 6, jul: 7, agu: 8, agt: 8, aug: 8, sep: 9, okt: 10, oct: 10, nov: 11, des: 12, dec: 12,
+};
+
+// Tahun 2 digit: sampai tahun berjalan dianggap 20xx, sesudahnya 19xx (tanggal lahir tidak di masa depan).
+function tahunPanjang(teks: string): number {
+  if (teks.length === 4) return Number(teks);
+  const yy = Number(teks);
+  return (yy <= new Date().getUTCFullYear() % 100 ? 2000 : 1900) + yy;
+}
+
+// Menerima: nomor seri Excel, dd/mm/yyyy (juga - atau .), yyyy-mm-dd (juga /), dan dd-Mon-yy(yy) seperti "12-Mar-07". Selain itu null.
 export function normalisasiTanggal(teks: string): string | null {
   const t = teks.trim();
   if (/^\d+(\.\d+)?$/.test(t)) {
@@ -64,6 +75,9 @@ export function normalisasiTanggal(teks: string): string | null {
   if (ymd) return iso(Number(ymd[1]), Number(ymd[2]), Number(ymd[3]));
   const dmy = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(t);
   if (dmy) return iso(Number(dmy[3]), Number(dmy[2]), Number(dmy[1]));
+  const dMonY = /^(\d{1,2})[-/. ]([a-z]{3,9})[-/. ](\d{2}|\d{4})$/i.exec(t);
+  const bulan = dMonY?.[2] ? BULAN[dMonY[2].slice(0, 3).toLowerCase()] : undefined;
+  if (dMonY?.[1] && dMonY[3] && bulan) return iso(tahunPanjang(dMonY[3]), bulan, Number(dMonY[1]));
   return null;
 }
 
@@ -107,13 +121,19 @@ const ALIAS_KAWIN: Record<string, StatusPerkawinan> = {
   "cerai hidup": "CERAI_HIDUP", "cerai mati": "CERAI_MATI",
 };
 
+const AWALAN_PENDIDIKAN = /^(?:tamat|tamatan|lulus|lulusan)\s+/;
+
 // Mencocokkan teks dengan nama atau alias master (tanpa pandang huruf besar/kecil), lalu pemetaan manual.
 export function cocokkanMaster(teks: string, master: OpsiMaster[], manual: Record<string, string> = {}): string | null {
   const k = kunci(teks);
   if (!k) return null;
   const manualId = manual[k];
   if (manualId) return manualId;
-  return master.find((m) => kunci(m.nama) === k || m.alias.some((a) => kunci(a) === k))?.id ?? null;
+  const cocok = master.find((m) => kunci(m.nama) === k || m.alias.some((a) => kunci(a) === k))?.id;
+  if (cocok) return cocok;
+  // "Tamat SMA" -> "SMA": coba lagi tanpa kata awalan; nama master utuh tetap didahulukan.
+  const tanpaAwalan = k.replace(AWALAN_PENDIDIKAN, "");
+  return tanpaAwalan !== k && tanpaAwalan ? cocokkanMaster(tanpaAwalan, master, manual) : null;
 }
 
 export function normalisasiBaris(mentah: BarisMentah, master: MasterImpor): BarisNormal {
