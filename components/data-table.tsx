@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-table";
 
 const fitur = tableFeatures({ rowPaginationFeature });
+export type FiturTabel = typeof fitur;
 
 interface Props<T extends object> {
   kolom: ColumnDef<typeof fitur, T>[];
