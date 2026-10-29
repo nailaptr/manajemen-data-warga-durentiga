@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  periksa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: warga
+          POSTGRES_PASSWORD: warga_ci
+          POSTGRES_DB: warga
+          TZ: Asia/Jakarta
+          PGTZ: Asia/Jakarta
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U warga -d warga"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    # Nilai uji saja; bukan rahasia sungguhan. Rahasia produksi tidak pernah dipakai di CI.
+    env:
+      DATABASE_URL: postgresql://warga:warga_ci@127.0.0.1:5432/warga
+      BETTER_AUTH_SECRET: rahasia-uji-ci-hanya-untuk-tes-0123456789
+      BETTER_AUTH_URL: http://localhost:3000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Versi pnpm dibaca dari "packageManager" di package.json.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # Tes memakai master data (wilayah, kategori) dari seed. Akun uji dilewati karena
+      # SEED_DEV_PASSWORD tidak diisi di CI.
+      - name: Migrasi dan seed database uji
+        run: |
+          pnpm db:deploy
+          pnpm db:seed
+
+      - name: Test
+        run: pnpm test
