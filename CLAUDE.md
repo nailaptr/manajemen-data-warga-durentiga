@@ -16,11 +16,11 @@ Aplikasi web ini mengganti pendataan warga di Excel untuk satu RW (RW 03) yang t
 | Prisma 7 | Skema bertipe dan migrasi terversi, dengan `$queryRaw` berparameter untuk filter usia. Memakai driver adapter `@prisma/adapter-pg`; client dibuat ke `generated/prisma` (tidak di-commit, dibuat oleh `postinstall`). Versi `prisma`, `@prisma/client`, dan adapter dipin sama. |
 | PostgreSQL 17 | Mendukung partial unique index dan `age()`. Lokal: Docker Compose. Produksi: Neon lewat Vercel Marketplace (akun Neon belum dibuat, belum dipakai). |
 | Better Auth | Email + kata sandi, verifikasi email, dan reset sandi sudah tersedia. Dipetakan ke tabel `users`; kata sandi disimpan di tabel `account` (lihat bagian 7). Sign-up publik dimatikan. |
-| Zod | Satu skema validasi dipakai di browser dan di server. Terpasang, belum dipakai. |
-| React Hook Form (belum dipasang) | Form besar (repeater anggota KK) tetap ringan dan terhubung ke skema Zod. |
-| TanStack Table | Pagination, sorting, dan filter di server untuk tabel dengan ribuan baris. Terpasang versi 9 (`@tanstack/react-table`), API-nya beda dari v8: opsi `features: tableFeatures({ rowPaginationFeature })`, bukan `getCoreRowModel`. Baru `DataTable` yang memakainya. |
+| Zod | Satu skema validasi dipakai di browser dan di server, ditaruh di `lib/validators/` (kk, warga, pengaturan, impor). Server Action dan Route Handler tetap memvalidasi ulang. |
+| React Hook Form | Form besar tetap ringan dan terhubung ke skema Zod lewat `zodResolver`. Dipakai `kk/form-kk.tsx` (repeater `useFieldArray`) dan `warga/modal-warga.tsx`; tipe form `useForm<XInput, unknown, XData>` dengan `z.input` dan `z.output` dari skema. |
+| TanStack Table | Pagination, sorting, dan filter di server untuk tabel dengan ribuan baris. Terpasang versi 9 (`@tanstack/react-table`), API-nya beda dari v8: opsi `features: tableFeatures({ rowPaginationFeature })`, bukan `getCoreRowModel`. Dipakai lewat `DataTable` oleh `kk/tabel-kk.tsx` dan `warga/daftar-warga.tsx`. |
 | Recharts (belum dipasang) | Bar, donut, dan piramida penduduk di dashboard tanpa pustaka grafik tambahan. |
-| SheetJS / ExcelJS (belum dipasang) | SheetJS membaca `.xlsx`/`.csv` di browser untuk import, ExcelJS menulis file export di server (asumsi sementara; lihat bagian 7). |
+| SheetJS (`xlsx` 0.20.3) / ExcelJS (belum dipasang) | SheetJS terpasang dari tarball resmi `cdn.sheetjs.com` (versi dipin, bukan dari npm) dan dipakai di browser oleh `lib/import/parse.ts` (membaca `.xlsx`/`.csv`) dan `lib/import/berkas.ts` (template dan daftar baris gagal). ExcelJS untuk export di server belum dipasang (asumsi sementara; lihat bagian 7). |
 | Resend (belum dipasang) | Email verifikasi akun, reset sandi, dan notifikasi pengajuan dengan konfigurasi minimal. Sementara `lib/email.ts` mencetak tautan ke terminal saat dev dan melempar error di produksi. |
 | Vitest | Tes aturan bisnis, parser filter, normalisasi import, dan tes integrasi ke Postgres lokal. |
 | Playwright (belum dipasang) | E2E untuk alur kritis dan tes otomatis cakupan data (SEC-04, AC-04, AC-05). |
@@ -36,13 +36,16 @@ app/
   tidak-berwenang/          # tujuan requireRole() bila peran tidak cocok
   (publik)/masuk, lupa-sandi, atur-ulang-sandi   # ada; `daftar` (klaim akun) belum
   (pengurus)/layout.tsx     # requireRole(...PENGURUS) + KerangkaPengurus (sidebar)
-  (pengurus)/dashboard, cari-warga, warga, kk (baru, [id], [id]/ubah),
-             pengajuan, import, pengguna (klaim), pengaturan (master, kategori-usia), log
-             # semua rute PRD 5.1 ada, tetapi isinya baru judul halaman + requireRole
+  (pengurus)/dashboard, cari-warga, pengajuan, pengguna (klaim), log
+             # rute PRD 5.1 ada, isinya baru judul halaman + requireRole
+  (pengurus)/kk (daftar, baru, [id], [id]/ubah)   # actions.ts, form-kk.tsx, tabel-kk.tsx, tombol-hapus-kk.tsx
+  (pengurus)/warga          # actions.ts, daftar-warga.tsx, modal-warga.tsx, combobox-kk.tsx
+  (pengurus)/pengaturan     # satu halaman bertab: page.tsx, actions.ts, tab-*.tsx, dialog-pengaturan.tsx; master/ dan kategori-usia/ hanya mengalihkan
+  (pengurus)/import         # wizard: page.tsx, wizard-import.tsx, langkah-preview.tsx, jalankan-impor.ts
   (warga)/layout.tsx        # requireRole("WARGA") + KerangkaWarga (header + navigasi bawah)
   (warga)/beranda, keluarga, pengajuan-saya (baru)   # judul saja
   profil/                   # layout memilih kerangka pengurus atau warga menurut peran (PRD 5.1: "Semua")
-  api/auth/[...all]         # ada (handler Better Auth); api/export, api/import-batch belum
+  api/auth/[...all]         # ada (handler Better Auth); api/import-batch ada (POST aksi mulai|proses|selesai); api/export belum
 components/
   kartu-form.tsx, tombol-keluar.tsx   # form publik, tombol Keluar (prop className)
   kerangka-pengurus.tsx, kerangka-warga.tsx   # kerangka halaman (klien, menu aktif lewat usePathname)
@@ -59,20 +62,23 @@ lib/
   email.ts         # kirimEmail()
   scope.ts         # scopeWhere(user, entity): cakupan RW/RT/KK; entity = "warga" | "kartu_keluarga" | "pengajuan"
   filters.ts       # satu parser filter URL -> query                (belum)
-  data/            # satu-satunya tempat memanggil prisma.warga / prisma.kartuKeluarga (belum)
-  import/          # parse, normalisasi, validasi                   (belum)
-  validators/      # skema Zod bersama                              (belum)
-  activity-log.ts  # penulisan activity_logs                        (belum)
-  mask.ts          # masking NIK / No KK                            (belum)
+  data/            # satu-satunya tempat memanggil prisma.warga / prisma.kartuKeluarga: kk.ts, warga.ts, pengaturan.ts, impor.ts
+  import/          # fungsi murni tanpa DB/UI: parse.ts, normalize.ts, validate.ts, group.ts, mapping.ts (deteksiMapping, gabungkanMapping), batch.ts (bagiBatch, tidak memecah satu KK), berkas.ts (buatTemplate, buatDaftarGagal), index.ts (prosesImpor), types.ts
+  validators/      # skema Zod bersama: kk.ts, warga.ts, pengaturan.ts, impor.ts
+  activity-log.ts  # catatAktivitas(data, klien): penulisan activity_logs
+  mask.ts          # maskNomor(): NIK / No KK dimasking
+  nik.ts           # nikCocokTanggalLahir(): BR-10, hasilnya peringatan, bukan penolakan
 prisma/
   schema.prisma, migrations/
   seed.ts, seed-dev-users.ts   # master data + akun uji dev
 prisma.config.ts               # skema, migrasi, perintah seed, DATABASE_URL
 generated/prisma/              # client Prisma (tidak di-commit)
 scripts/create-admin.ts        # Super Admin pertama (produksi)
+scripts/buat-contoh-impor.ts   # membuat docs/data-contoh/warga-contoh.xlsx (data palsu)
 tests/
   integration/     # Vitest ke Postgres lokal; helpers.ts berisi dalamRollback() dan tipe Tx
-  unit/            # Vitest tanpa database (belum)
+  unit/            # Vitest tanpa database (skema, normalisasi import, mask, nik)
+  fixtures/import/ # CSV kecil per kasus untuk tes import
   e2e/             # Playwright (belum)
 docs/              # PRD, playbook, mockup
 .github/workflows/ci.yml   # CI tiap pull request
@@ -144,7 +150,7 @@ Variabel lingkungan (`.env`, tidak di-commit; contoh di `.env.example`): `DATABA
 ### Pola yang sudah dipakai di kode
 
 - CI (`.github/workflows/ci.yml`, tiap pull request): install `--frozen-lockfile`, lint, typecheck, `db:deploy` + `db:seed`, test, dengan service Postgres 17. Variabel lingkungan diisi nilai uji di workflow; `SEED_DEV_PASSWORD` sengaja kosong sehingga akun uji dilewati.
-- Daftar peran dan menu ada di `lib/navigasi.ts`: halaman pengurus memanggil `requireRole(...PENGURUS)` atau `requireRole(...ADMIN)` (Import, Pengguna, Pengaturan, Log). Menu sidebar mengikuti PRD 5.2; menu aktif dicocokkan dengan awalan rute (`awalan` untuk Pengaturan).
+- Daftar peran dan menu ada di `lib/navigasi.ts`: halaman pengurus memanggil `requireRole(...PENGURUS)` atau `requireRole(...ADMIN)` (Import, Pengguna, Pengaturan, Log). Menu sidebar mengikuti PRD 5.2; menu aktif dicocokkan dengan awalan rute (`menuAktif()`); `awalan` opsional bila berbeda dari `href`.
 - Layout kelompok rute (`(pengurus)`, `(warga)`, `profil`) memanggil `requireRole` dan membungkus halaman dengan kerangka; tiap `page.tsx` di `(pengurus)` dan `(warga)` tetap memanggil `requireRole` sendiri (peran per halaman bisa lebih sempit dari layout). `profil/page.tsx` tidak, karena layout-nya sudah menerima semua peran.
 - Kerangka pengurus: sidebar tetap di layar lebar (`lg`), laci dengan tombol menu di layar kecil (Escape menutup). Kerangka warga: navigasi bawah tetap, lebar maksimum `max-w-xl`, huruf dasar 16 px, target sentuh minimal 44 px.
 - Komponen dasar: `StatCard` (ikon sebagai ReactNode), `StatusBadge` (status `aktif | disetujui | menunggu | ditolak | nonaktif`, teks selalu tertulis), `FilterChip` (`hrefHapus` = URL tanpa filter itu, tautan biasa), `DataTable` (komponen klien; `halaman` dan `ukuranHalaman` dari URL `?halaman=`, `total` dari server, ada keadaan kosong dan galat). Kolom `DataTable` yang dikirim dari Server Component harus data biasa (`accessorKey`, `header` string), bukan fungsi.
@@ -163,12 +169,34 @@ Variabel lingkungan (`.env`, tidak di-commit; contoh di `.env.example`): `DATABA
 - Constraint yang tidak bisa ditulis di Prisma (CHECK 16 digit `nik`/`no_kk`, partial unique index `one_head_per_kk`) ada di SQL migrasi `20261028175015_init`.
 - Seed idempoten (`upsert`/cek ada dulu). `prisma/seed-dev-users.ts` menolak jalan bila `NODE_ENV=production`.
 
+### Pola modul data dan Server Action
+
+- Tiap modul punya `lib/data/<modul>.ts`. Fungsinya menerima `(user: Pengguna, ..., db: Klien = prisma)` dengan `Klien = PrismaClient | Prisma.TransactionClient`, sehingga tes bisa memberi transaksi. Galat bisnis dilempar sebagai kelas turunan `Error` per modul (`GalatKk`, `GalatPengaturan`, `GalatBatch`).
+- Cakupan lewat `scopeWhere(user, ...)` ditambah `deleted_at: null` secara eksplisit. Log ditulis dengan `catatAktivitas(..., tx)` di transaksi yang sama dengan perubahan datanya.
+- Daftar KK dua tahap: Prisma + `scopeWhere` menentukan id dan halaman, lalu view `v_kk_ringkasan` (migrasi `20261029130000_v_kk_ringkasan`) mengisi kepala keluarga dan jumlah anggota.
+- `actions.ts` di folder rute: `"use server"`, `requireRole(...PENGURUS)` atau `(...ADMIN)`, id dicek `z.string().uuid()`, input `safeParse` dengan skema bersama. Hasil berbentuk `{ ok: true, ... } | { ok: false, galat }` (`HasilAksi`, `HasilSimpan`, `HasilPengaturan`). Galat bisnis ditampilkan apa adanya; galat tak terduga dijawab pesan umum dan hanya `e.name` yang di-`console.error`. Setelah berhasil memanggil `revalidatePath`.
+- Halaman daftar membaca `searchParams` (`q`, `status`, `halaman`) di Server Component, menyaring di server, dan mengirim `total` dan baris ke `DataTable`. Chip filter memakai `FilterChip` dengan `hrefHapus`.
+- Pengaturan: master yang masih dipakai tidak bisa dihapus; Admin RW dibatasi ke RW-nya untuk RT/RW; kategori usia boleh tumpang tindih.
+- `hitungUsia()` ada di `lib/data/warga.ts`; kecocokan NIK dengan tanggal lahir hanya peringatan.
+
+### Import Excel (wizard `/import`)
+
+- Wizard di `app/(pengurus)/import/`: file diparse di browser, dikirim per batch 200 baris (`UKURAN_BATCH`) ke `POST /api/import-batch` dengan aksi `mulai`, `proses` per batch, lalu `selesai` (`lib/data/impor.ts`: `mulaiImpor`, `prosesBatch`, `selesaiImpor`). File tidak pernah disimpan di server. Template dan daftar baris gagal dibuat di browser.
+- Tiap batch satu transaksi, upsert berdasarkan NIK; KK dan wilayah dibuat bila belum ada. Gagal bisnis per baris hanya melewati baris itu; galat DB tak terduga membatalkan seluruh batch. Satu KK tidak dipecah antar batch (`bagiBatch`).
+- `import_batches.errors` berbentuk `{ gagal: [{ nomor, pesan }], dilewati: n }`; pesan tidak memuat NIK, No KK, atau tanggal lahir. Status: BERJALAN, SELESAI, GAGAL (semua baris gagal).
+- Mapping tersimpan diambil dari `import_batches` terakhir berstatus SELESAI (`mappingTerakhir()`, tanpa perubahan skema). Pilihan manual nilai pendidikan/pekerjaan tak dikenal ditambahkan ke `alias` master saat `mulai`.
+- Admin RW hanya boleh mengimpor ke RW-nya; Super Admin ke RW mana pun. RT/RW baru dibuat otomatis.
+- Preview menampilkan NIK dimasking (menyimpang dari mockup). `alamat` kosong disimpan "-" untuk KK baru; nama lebih dari 100 karakter dihitung Error.
+
 ### Cara menulis tes (pola yang ada)
 
 - Berkas di `tests/<jenis>/*.test.ts`; konfigurasi `vitest.config.mts` (alias `@` ke akar repo, `fileParallelism: false` karena semua tes integrasi memakai satu database).
 - Nama tes dalam Bahasa Indonesia, menyebut ID aturan PRD bila ada (contoh: "(BR-02)", "(FR-AUTH-04)").
 - Tes DB memakai transaksi yang selalu di-rollback (`dalamRollback()` di `tests/integration/db-constraints.test.ts`) agar database tetap bersih. Tes yang harus melewati transaksi sendiri (Better Auth) membuat data dengan email `@contoh.test`, dan menghapusnya di `beforeAll`/`afterAll`.
 - Data uji memakai NIK/No KK berawalan `999` dan email `@contoh.test`; bukan data nyata.
+- Tes unit (`tests/unit/`) menguji skema Zod, normalisasi/validasi import, `bagiBatch`, `buatTemplate`/`buatDaftarGagal` (dibaca ulang dengan `parseBerkas`), `maskNomor`, `nikCocokTanggalLahir`. Kasus import berupa CSV kecil di `tests/fixtures/import/`.
+- Tes integrasi import (`tests/integration/impor.test.ts`) memakai transaksi sungguhan, jadi membersihkan datanya sendiri: RW `097`, NIK berawalan `99900097`, No KK berawalan `99901097`, email `uji-impor-*@contoh.test`.
+- Tes data modul (`kk`, `warga`, `pengaturan`) memanggil fungsi `lib/data/*` dengan `db` berupa transaksi dari `dalamRollback()`; tes Server Action (`pengaturan-aksi`) memalsukan `requireRole`.
 - Tes `requireRole` memalsukan `next/headers`, `next/navigation` (redirect melempar `REDIRECT:<url>`), dan `auth.api.getSession` dengan `vi.mock`/`vi.spyOn`; pengguna tetap dibuat di database sungguhan.
 - Tes cakupan membuat data lalu membatasi hasil dengan `id in [...]` agar data seed tidak ikut terhitung.
 - Tes constraint memanggil SQL mentah untuk kasus yang ditolak Prisma sebelum sampai ke database (NIK bukan 16 digit, warga tanpa KK).
@@ -196,7 +224,7 @@ Asumsi di bawah dipakai agar pengembangan jalan. Setiap asumsi bisa berubah; jik
 | Persetujuan kebijakan privasi oleh kelurahan/hukum | Halaman Kebijakan Privasi berisi draf; persetujuan pihak luar menjadi syarat peluncuran, bukan syarat pengembangan. |
 | Estimasi durasi fase | Tidak diestimasi sampai jumlah pengembang dan kolom Excel diketahui. |
 
-Asumsi teknis yang masih perlu dikonfirmasi saat pertama dipakai: SheetJS untuk parse di browser dan ExcelJS untuk export di server. Sudah diputuskan dan dipakai: pnpm, Prisma, Better Auth, Docker Compose untuk database lokal.
+Asumsi teknis yang masih perlu dikonfirmasi saat pertama dipakai: ExcelJS untuk export di server. SheetJS sudah dipakai di `lib/import/` dan wizard (alur di browser belum dicoba manual). Sudah diputuskan dan dipakai: pnpm, Prisma, Better Auth, Docker Compose untuk database lokal.
 
 ### Penyimpangan dari PRD bagian 8 yang sudah diterapkan
 
@@ -213,6 +241,6 @@ Asumsi teknis yang masih perlu dikonfirmasi saat pertama dipakai: SheetJS untuk 
 
 - Mockup memakai huruf 14/15 px; portal warga harus 16 px (NFR-04).
 - Halaman Masuk, Lupa sandi, dan Atur ulang sandi dibuat sebagai form sederhana (satu kartu di tengah, token warna PRD) atas persetujuan pemilik proyek karena mockup tidak ada; boleh diganti bila mockup datang.
-- Mockup belum menggambar: Detail KK, Profil, Import langkah 1/2/4, serta kondisi kosong, memuat, dan error. Tanyakan sebelum merancang sendiri.
-- Mockup Pengaturan memakai satu halaman bertab (Pendidikan, Pekerjaan, Kategori usia, RT dan RW), sedangkan PRD 5.1 menyebut dua rute (`/pengaturan/master`, `/pengaturan/kategori-usia`). Putuskan bersama sebelum membangun.
+- Mockup belum menggambar: Detail KK, Profil, Import langkah 1/2/4, serta kondisi kosong, memuat, dan error. Wizard Import langkah 1, 2, dan 4 dibuat tanpa mockup (mengikuti gaya langkah 3); ganti bila mockup datang. Tanyakan sebelum merancang sendiri.
+- Pengaturan: diputuskan satu halaman bertab `/pengaturan?tab=pendidikan|pekerjaan|kategori-usia|rt-rw` (sesuai mockup). Rute PRD 5.1 lama (`/pengaturan/master`, `/pengaturan/kategori-usia`) hanya mengalihkan ke sana. Kode ada di `app/(pengurus)/pengaturan/` dan `lib/data/pengaturan.ts`; hanya `ADMIN`.
 - Seluruh nama, NIK, dan angka di mockup adalah data contoh; jangan dijadikan data seed nyata.
