@@ -27,6 +27,7 @@ export const auth = betterAuth({
     enabled: true,
     disableSignUp: true,
     requireEmailVerification: true,
+    minPasswordLength: 10,
     sendResetPassword: async ({ user, url }) => {
       await kirimEmail({ ke: user.email, subjek: "Atur ulang kata sandi", tautan: url });
     },
@@ -48,6 +49,9 @@ export const auth = betterAuth({
             where: { id: sesi.userId },
             select: { status: true },
           });
+          if (pengguna?.status === "MENUNGGU_VERIFIKASI") {
+            throw new APIError("FORBIDDEN", { message: "Akun menunggu verifikasi pengurus RT." });
+          }
           if (pengguna?.status !== "AKTIF") {
             throw new APIError("FORBIDDEN", { message: "Akun belum aktif." });
           }

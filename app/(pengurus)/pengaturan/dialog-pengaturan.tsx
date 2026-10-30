@@ -10,12 +10,13 @@ interface Props {
   // Mengembalikan hasil aksi; dialog tertutup bila ok.
   onSimpan: () => Promise<HasilPengaturan>;
   onTutup: (tersimpan: boolean) => void;
+  labelSimpan?: string;
 }
 
 export const kelasField =
   "mt-1 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-base text-teks focus:border-teal focus:outline-none focus:ring-2 focus:ring-teal/30";
 
-export function DialogPengaturan({ judul, children, onSimpan, onTutup }: Props) {
+export function DialogPengaturan({ judul, children, onSimpan, onTutup, labelSimpan = "Simpan" }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [galat, setGalat] = useState<string | null>(null);
   const [menyimpan, setMenyimpan] = useState(false);
@@ -57,7 +58,7 @@ export function DialogPengaturan({ judul, children, onSimpan, onTutup }: Props) 
             Batal
           </button>
           <button type="submit" disabled={menyimpan} className="min-h-11 rounded-lg bg-teal px-6 font-semibold text-white hover:bg-teal/90 disabled:opacity-60">
-            {menyimpan ? "Menyimpan..." : "Simpan"}
+            {menyimpan ? "Memproses..." : labelSimpan}
           </button>
         </footer>
       </form>

@@ -57,7 +57,7 @@ export function hariJakarta(sekarang: Date = new Date()): Date {
 }
 
 // Tanggal yang sama `tahun` tahun lalu; 29 Februari menjadi 28 Februari di tahun biasa.
-function mundurTahun(hari: Date, tahun: number): Date {
+export function mundurTahun(hari: Date, tahun: number): Date {
   const y = hari.getUTCFullYear() - tahun;
   const m = hari.getUTCMonth();
   const akhirBulan = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();

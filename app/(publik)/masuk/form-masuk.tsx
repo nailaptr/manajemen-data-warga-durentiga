@@ -59,6 +59,12 @@ export function FormMasuk() {
           Lupa kata sandi?
         </Link>
       </p>
+      <p className="text-center text-sm text-teks-sekunder">
+        Warga belum punya akun?{" "}
+        <Link href="/daftar" className="font-medium text-teal">
+          Daftar
+        </Link>
+      </p>
     </form>
   );
 }

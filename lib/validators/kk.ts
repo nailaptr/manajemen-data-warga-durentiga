@@ -10,7 +10,7 @@ export const GOLONGAN_DARAH = ["A", "B", "AB", "O", "TIDAK_TAHU"] as const;
 export const STATUS_PERKAWINAN = ["BELUM_KAWIN", "KAWIN", "CERAI_HIDUP", "CERAI_MATI"] as const;
 
 // NIK dan No KK selalu string 16 digit (BR-03), tidak pernah number.
-const nomor16 = (nama: string) => z.string().regex(/^\d{16}$/, `${nama} harus 16 digit angka`);
+export const nomor16 = (nama: string) => z.string().regex(/^\d{16}$/, `${nama} harus 16 digit angka`);
 const wajib = (pesan: string) => z.string().trim().min(1, pesan);
 const opsional = z.string().trim().optional().transform((v) => (v ? v : undefined));
 const tanggal = z

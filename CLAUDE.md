@@ -21,7 +21,7 @@ Aplikasi web ini mengganti pendataan warga di Excel untuk satu RW (RW 03) yang t
 | TanStack Table | Pagination, sorting, dan filter di server untuk tabel dengan ribuan baris. Terpasang versi 9 (`@tanstack/react-table`), API-nya beda dari v8: opsi `features: tableFeatures({ rowPaginationFeature })`, bukan `getCoreRowModel`. Dipakai lewat `DataTable` oleh `kk/tabel-kk.tsx` dan `warga/daftar-warga.tsx`. |
 | Recharts 3 | Bar, donut, dan piramida penduduk di dashboard tanpa pustaka grafik tambahan. Dipakai hanya di Client Component `components/grafik-*.tsx`; warna lewat `var(--color-...)`. |
 | SheetJS (`xlsx` 0.20.3) | Terpasang dari tarball resmi `cdn.sheetjs.com` (versi dipin, bukan dari npm). Dipakai di browser oleh `lib/import/parse.ts` (membaca `.xlsx`/`.csv`) dan `lib/import/berkas.ts` (template dan daftar baris gagal), dan di server oleh `lib/data/export.ts` (export Cari Warga). ExcelJS tidak dipakai. |
-| Resend (belum dipasang) | Email verifikasi akun, reset sandi, dan notifikasi pengajuan dengan konfigurasi minimal. Sementara `lib/email.ts` mencetak tautan ke terminal saat dev dan melempar error di produksi. |
+| Resend (lewat `fetch`, tanpa paket) | Email verifikasi akun, reset sandi, hasil klaim, dan notifikasi pengajuan. `lib/email.ts` memanggil `POST https://api.resend.com/emails` di produksi (butuh `RESEND_API_KEY` dan `EMAIL_DARI`, bila kosong melempar error); di dev dan tes isi email dicetak ke terminal. SDK `resend` tidak dipasang karena satu panggilan HTTP cukup. |
 | Vitest | Tes aturan bisnis, parser filter, normalisasi import, dan tes integrasi ke Postgres lokal. |
 | Playwright (belum dipasang) | E2E untuk alur kritis dan tes otomatis cakupan data (SEC-04, AC-04, AC-05). |
 
@@ -34,22 +34,24 @@ app/
   layout.tsx, globals.css   # Plus Jakarta Sans, token warna Tailwind
   page.tsx                  # arahkan: belum masuk -> /masuk, WARGA -> /beranda, lainnya -> /dashboard
   tidak-berwenang/          # tujuan requireRole() bila peran tidak cocok
-  (publik)/masuk, lupa-sandi, atur-ulang-sandi   # ada; `daftar` (klaim akun) belum
+  (publik)/masuk, lupa-sandi, atur-ulang-sandi   # ada; `daftar` (klaim akun, PRD 3.1) dan `kebijakan-privasi` (draf) ada: actions.ts, form-daftar.tsx
   (pengurus)/layout.tsx     # requireRole(...PENGURUS) + KerangkaPengurus (sidebar)
-  (pengurus)/dashboard, cari-warga, pengajuan, pengguna (klaim), log
-             # rute PRD 5.1 ada, isinya baru judul halaman + requireRole
+  (pengurus)/dashboard, cari-warga, pengajuan, log
+             # rute PRD 5.1 ada; dashboard, cari-warga (actions.ts, drawer-warga.tsx, hasil-warga.tsx), dan pengajuan (actions.ts, panel-keputusan.tsx) berisi; log baru judul halaman + requireRole
   (pengurus)/kk (daftar, baru, [id], [id]/ubah)   # actions.ts, form-kk.tsx, tabel-kk.tsx, tombol-hapus-kk.tsx
+  (pengurus)/pengguna       # page.tsx (ADMIN), actions.ts, tabel-pengurus.tsx, antrean-klaim.tsx; klaim/page.tsx (PENGURUS, antrean saja)
   (pengurus)/warga          # actions.ts, daftar-warga.tsx, modal-warga.tsx, combobox-kk.tsx
   (pengurus)/pengaturan     # satu halaman bertab: page.tsx, actions.ts, tab-*.tsx, dialog-pengaturan.tsx; master/ dan kategori-usia/ hanya mengalihkan
   (pengurus)/import         # wizard: page.tsx, wizard-import.tsx, langkah-preview.tsx, jalankan-impor.ts
   (warga)/layout.tsx        # requireRole("WARGA") + KerangkaWarga (header + navigasi bawah)
-  (warga)/beranda, keluarga, pengajuan-saya (baru)   # judul saja
+  (warga)/beranda, keluarga, pengajuan-saya   # portal warga, data dari lib/data/portal.ts; pengajuan-saya/baru berisi form-pengajuan.tsx, actions.ts, tombol-batal.tsx
   profil/                   # layout memilih kerangka pengurus atau warga menurut peran (PRD 5.1: "Semua")
   api/auth/[...all]         # ada (handler Better Auth); api/import-batch ada (POST aksi mulai|proses|selesai); api/export ada (GET, lihat "Cari Warga")
 components/
   kartu-form.tsx, tombol-keluar.tsx   # form publik, tombol Keluar (prop className)
   kerangka-pengurus.tsx, kerangka-warga.tsx   # kerangka halaman (klien, menu aktif lewat usePathname)
   judul-halaman.tsx                   # h1 + deskripsi opsional, dipakai semua halaman
+  avatar-inisial.tsx, status-pengajuan.tsx   # portal warga
   stat-card.tsx, status-badge.tsx, filter-chip.tsx, data-table.tsx   # komponen dasar
   filter-statistik.tsx, pilihan-jamak.tsx   # kontrol filter (klien), URL sebagai sumber kebenaran; dipakai Dashboard dan Cari Warga; chip-filter-aktif.tsx
   grafik-bar.tsx, grafik-piramida.tsx, grafik-donut.tsx   # grafik Recharts (klien); data datang dari Server Component
@@ -60,16 +62,17 @@ lib/
   auth-client.ts   # authClient untuk komponen klien
   navigasi.ts      # PENGURUS/ADMIN (daftar peran), NAMA_PERAN, menuPengurus(role), MENU_WARGA, menuAktif()
   login-lockout.ts # hitungLoginGagal(), catatLoginGagal() (via activity_logs)
-  akun.ts          # buatAkunAktif(): satu-satunya jalan membuat akun berkata sandi (seed, skrip admin)
-  email.ts         # kirimEmail()
+  akun.ts          # buatAkun() (satu-satunya jalan membuat akun berkata sandi) dan buatAkunAktif() (seed, skrip admin)
+  klaim-limit.ts   # catatDanCekPercobaan() (5 percobaan/jam per IP dan per NIK), tahanSampai() (lantai waktu respons klaim)
+  email.ts         # kirimEmail({ ke, subjek, tautan?, pesan? }) + templat kirimPengajuanBaru() dan kirimHasilPengajuan(); menolak isi bermuat 16 digit
   scope.ts         # scopeWhere(user, entity): cakupan RW/RT/KK; entity = "warga" | "kartu_keluarga" | "pengajuan"
   filter-url.ts    # filterKeQuery(), adaFilter(): filter -> query URL, aman dipakai di browser
   filter-ui.ts     # muatMaster(), susunFilterUi(): pilihan dan chip filter untuk Dashboard dan Cari Warga (server)
   format.ts        # formatAngka(), formatPersen() (id-ID)
   filters.ts       # parseFilter() (query string -> filter Zod), buildWargaWhere(filter, user), hariJakarta()
-  data/            # satu-satunya tempat memanggil prisma.warga / prisma.kartuKeluarga: kk.ts, warga.ts, pengaturan.ts, impor.ts, stats.ts (statistik dan daftar terfilter), export.ts
+  data/            # satu-satunya tempat memanggil prisma.warga / prisma.kartuKeluarga: kk.ts, warga.ts, pengaturan.ts, impor.ts, stats.ts (statistik dan daftar terfilter), export.ts, klaim.ts (klaimAkun), portal.ts (portal warga), pengguna.ts (akun pengurus dan antrean klaim), pengajuan.ts (pengajuan perubahan)
   import/          # fungsi murni tanpa DB/UI: parse.ts, normalize.ts, validate.ts, group.ts, mapping.ts (deteksiMapping, gabungkanMapping), batch.ts (bagiBatch, tidak memecah satu KK), berkas.ts (buatTemplate, buatDaftarGagal), index.ts (prosesImpor), types.ts
-  validators/      # skema Zod bersama: kk.ts, warga.ts, pengaturan.ts, impor.ts
+  validators/      # skema Zod bersama: kk.ts, warga.ts, pengaturan.ts, impor.ts, klaim.ts, pengguna.ts, pengajuan.ts
   activity-log.ts  # catatAktivitas(data, klien): penulisan activity_logs
   mask.ts          # maskNomor(): NIK / No KK dimasking
   nik.ts           # nikCocokTanggalLahir(): BR-10, hasilnya peringatan, bukan penolakan
@@ -111,7 +114,7 @@ Manajer paket: pnpm. Postgres lokal harus jalan sebelum `pnpm test` dan `pnpm db
 | 10.000 warga fiktif untuk uji performa | `pnpm db:seed:uji` (setelah `db:seed`; menolak jalan di produksi, DB non-lokal, atau bila data `99908*` sudah ada) |
 | Super Admin pertama | `ADMIN_NAMA=... ADMIN_EMAIL=... ADMIN_PASSWORD=... pnpm db:create-admin` |
 
-Variabel lingkungan (`.env`, tidak di-commit; contoh di `.env.example`): `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `SEED_DEV_PASSWORD` (min. 12 karakter; kosong berarti akun uji dilewati).
+Variabel lingkungan (`.env`, tidak di-commit; contoh di `.env.example`): `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `SEED_DEV_PASSWORD` (min. 12 karakter; kosong berarti akun uji dilewati), `RESEND_API_KEY` dan `EMAIL_DARI` (hanya produksi).
 
 ## 5. Aturan kode dan keamanan
 
@@ -167,7 +170,7 @@ Variabel lingkungan (`.env`, tidak di-commit; contoh di `.env.example`): `DATABA
 - Halaman terlindungi memanggil `requireRole("SUPER_ADMIN", ...)` dari `lib/auth.ts`. Belum masuk dialihkan ke `/masuk`; peran tidak cocok ke `/tidak-berwenang`. `getSession()` membaca ulang peran dan status dari database di tiap permintaan.
 - `scopeWhere(user, entity)` (`lib/scope.ts`) mengembalikan filter Prisma untuk cakupan akses: Super Admin semua, Admin RW menurut `rw`, Ketua RT menurut `wilayah_id`, Warga hanya KK dari `warga_id` (warga yang di-soft-delete tidak mendapat apa pun). Data pengguna tidak lengkap menghasilkan filter yang tidak cocok dengan apa pun. Filter ini tidak menyaring `deleted_at` atau status; pemanggil menambahkannya sendiri. Dipakai dengan `where: { AND: [scopeWhere(user, "warga"), ...] }`.
 - Seed dev membuat empat akun (satu per peran): `superadmin@`, `adminrw@`, `ketuart01@`, `warga@contoh.test`; akun Warga terhubung ke satu KK dan warga palsu (NIK/No KK berawalan `999`).
-- Akun berkata sandi dibuat hanya lewat `buatAkunAktif()` (`lib/akun.ts`). Sign-up Better Auth dimatikan.
+- Akun berkata sandi dibuat hanya lewat `buatAkun()` (`lib/akun.ts`, menerima hash, `status`, dan `email_verified`); `buatAkunAktif()` membungkusnya untuk akun AKTIF terverifikasi. Sign-up Better Auth dimatikan. Kata sandi minimal 10 karakter (`minPasswordLength` di `lib/auth.ts`).
 - Id Better Auth dibuat sebagai UUID (`advanced.database.generateId: "uuid"`) karena semua kunci utama bertipe `uuid`.
 - Kunci login: `hooks.before`/`hooks.after` di `lib/auth.ts` memakai `activity_logs` (aksi `LOGIN_GAGAL`, `entitas = "email"`, `entitas_id` = email huruf kecil). Berlaku untuk email apa pun agar respons tidak membuka email terdaftar.
 - Pesan galat login dipetakan ke Bahasa Indonesia di `app/(publik)/masuk/form-masuk.tsx`; pesan "lupa sandi" selalu sama.
@@ -218,6 +221,52 @@ Variabel lingkungan (`.env`, tidak di-commit; contoh di `.env.example`): `DATABA
 - Normalisasi nilai Excel ada di `lib/import/normalize.ts`: `normalisasiTanggal` (nomor seri Excel, `dd/mm/yyyy`, `yyyy-mm-dd`, `dd-Mon-yy(yy)` dengan bulan Inggris/Indonesia; tahun 2 digit sampai tahun berjalan menjadi 20xx, sisanya 19xx), `normalisasiRtRw` (`RT 02` menjadi `002`), `cocokkanMaster` (nama/alias master dulu, lalu coba tanpa awalan `tamat`/`tamatan`/`lulus`/`lulusan`). Pola dari Excel asli ditambahkan di sini dengan tes data fiktif di `tests/unit/import-pola-excel.test.ts`.
 - Preview menampilkan NIK dimasking (menyimpang dari mockup). `alamat` kosong disimpan "-" untuk KK baru; nama lebih dari 100 karakter dihitung Error.
 
+### Klaim akun warga (`/daftar`, PRD 3.1)
+
+- `klaimSchema` (`lib/validators/klaim.ts`): email, kata sandi >= 10, NIK, No KK, tanggal lahir `DD/MM/YYYY` (diubah ke `YYYY-MM-DD`), `setuju` wajib true. Form hanya memakai email (bukan nomor HP seperti tulisan mockup).
+- `klaimAkun(input, ip, db, hari)` (`lib/data/klaim.ts`): hash kata sandi selalu dihitung, percobaan dicatat dulu baru dihitung (`catatDanCekPercobaan`), lalu satu query warga (NIK + No KK + tanggal lahir, AKTIF, tidak dihapus, usia >= 17 lewat `mundurTahun`) dan satu query bentrok (`warga_id` atau email sudah dipakai). Semua kegagalan pencocokan mengembalikan `PESAN_KLAIM_GAGAL` yang sama; yang berbeda hanya `PESAN_KLAIM_DIBATASI` (kode `DIBATASI`) setelah 5 percobaan per jam per IP atau per NIK.
+- Percobaan disimpan di `activity_logs` (aksi `KLAIM_PERCOBAAN`, entitas `klaim_ip` / `klaim_nik`, `entitas_id` = HMAC SHA-256 dengan `BETTER_AUTH_SECRET`); NIK dan IP tidak disimpan apa adanya. IP dari header `x-forwarded-for` (dipercaya di Vercel).
+- Jika cocok: user `WARGA`, status `MENUNGGU_VERIFIKASI`, `email_verified` false, `warga_id` tertaut (unique), log `KLAIM_DIAJUKAN` dalam transaksi yang sama. Unique `warga_id`/email yang kalah balapan dijawab sama dengan data tidak cocok.
+- `daftarAksi` (`app/(publik)/daftar/actions.ts`) mengirim email verifikasi lewat `auth.api.sendVerificationEmail` setelah akun dibuat (kegagalan kirim hanya di-log `e.name`) dan menahan respons sampai `LANTAI_WAKTU_MS` (800 ms) lewat `tahanSampai()`.
+- Login: hook `session.create.before` di `lib/auth.ts` menjawab "Akun menunggu verifikasi pengurus RT." untuk status `MENUNGGU_VERIFIKASI` (setelah email terverifikasi); sebelum itu Better Auth menjawab `EMAIL_NOT_VERIFIED`. Antrean persetujuannya ada di `/pengguna/klaim` (lihat bagian Pengguna).
+- Tes: `tests/unit/klaim-schema.test.ts` (skema dan `tahanSampai`), `tests/integration/klaim.test.ts` (AC-09: pesan sama persis untuk semua sebab gagal, percobaan ke-6 diblokir per IP dan per NIK, satu warga satu akun; data RW `094`, NIK `99911...`, No KK `99912...`), dan dua kasus status di `auth.test.ts`.
+
+### Pengguna dan antrean klaim (`/pengguna`, `/pengguna/klaim`, PRD 4.8)
+
+- `/pengguna` hanya `ADMIN` (kartu hitungan, tabel akun pengurus, antrean klaim); `/pengguna/klaim` untuk `PENGURUS` (jalan masuk Ketua RT, hanya antrean). Logika di `lib/data/pengguna.ts`, aksi di `app/(pengurus)/pengguna/actions.ts`, skema di `lib/validators/pengguna.ts`.
+- Daftar pengurus hanya Admin RW dan Ketua RT. Super Admin mengelola keduanya; Admin RW hanya Ketua RT di RW-nya (`whereKelola`, `bisaKelola`). Ketua RT wajib `wilayah_id`; Admin RW wajib `rw` yang sudah ada di `wilayah`.
+- Tambah pengurus: kata sandi acak di-hash, akun AKTIF dan email terverifikasi, lalu tautan atur sandi lewat `auth.api.requestPasswordReset` (reset sandi memakai panggilan yang sama). Menonaktifkan akun menghapus sesinya.
+- Antrean klaim: cakupan lewat `warga: { is: scopeWhere(user, "warga") }`, jadi Ketua RT hanya RT-nya. Setujui diblokir sampai email pendaftar terverifikasi dan memakai `updateMany` dengan syarat status MENUNGGU_VERIFIKASI (aman dari balapan). Tolak: status DITOLAK, `warga_id` dikosongkan agar data warga bisa diklaim ulang, alasan opsional (maks 200) dicatat dan dikirim.
+- Log: `PENGGUNA_DIBUAT`, `PENGGUNA_DIUBAH`, `PENGGUNA_DINONAKTIFKAN`, `PENGGUNA_DIAKTIFKAN`, `PENGGUNA_RESET_SANDI`, `KLAIM_DISETUJUI`, `KLAIM_DITOLAK`, ditulis di transaksi yang sama dengan perubahannya.
+- Aksi: `requireRole` dijalankan lebih dulu di `bungkus()`, validasi Zod dan id sesudahnya (pemanggil tanpa hak tidak mendapat pesan validasi). Email hasil bersifat best-effort (`kirimAman`): gagal kirim tidak membatalkan keputusan, hasilnya membawa `info`. Di produksi `kirimEmail` melempar error bila `RESEND_API_KEY`/`EMAIL_DARI` kosong.
+- UI memakai ulang `DialogPengaturan` (prop `labelSimpan`). Mockup memuat ikon detail (mata) dan kolom Kontak; keduanya tidak dibuat, kolom diisi email.
+- Tes: `tests/integration/pengguna.test.ts` (RW `092`/`091`, NIK `99913...`, No KK `99914...`, email `uji-pengguna-*@contoh.test`) dan `pengguna-aksi.test.ts` (urutan peran dan validasi, email `uji-aksi-pengguna@contoh.test`).
+
+### Pengajuan perubahan (`/pengajuan-saya/baru`, `/pengajuan`, PRD 3.3 dan 4.4)
+
+- `lib/data/pengajuan.ts`, validator di `lib/validators/pengajuan.ts`. Jenis: `UBAH_WARGA` (field `FIELD_UBAH`; `data_lama`/`data_baru` hanya field yang berubah, field yang sama dengan data sekarang dibuang server), `TAMBAH_ANGGOTA` (`data_baru` = data anggota, bukan Kepala Keluarga, `data_lama` null), `LAPOR_PINDAH`/`LAPOR_MENINGGAL` (`status_kependudukan` dan `tanggal_status`). Nilai disimpan sebagai string baku (tanggal `YYYY-MM-DD`, id master); label dibuat saat ditampilkan.
+- Membuat: hanya peran WARGA; `warga_id` harus anggota AKTIF KK sendiri (KK lain diperlakukan seperti tidak ada); satu pengajuan MENUNGGU per anggota. NIK ganda tidak dicek saat membuat (agar warga tidak bisa menebak NIK orang lain), baru saat disetujui. Pembatalan: hanya pengaju, hanya MENUNGGU (`batalkanPengajuan`).
+- Antrean pengurus (`/pengajuan?status=&id=`): tab status dengan jumlah, daftar maksimal 100, detail tabel Saat ini/Usulan, `PanelKeputusan` (klien). Semua fungsi pengurus menolak peran WARGA lebih dulu karena `scopeWhere` memberi Warga cakupan KK-nya; sesudah itu cakupan lewat `scopeWhere` (Ketua RT hanya RT-nya).
+- `setujuiPengajuan`: satu transaksi; semua pemeriksaan dulu (konflik, validasi), lalu klaim status MENUNGGU -> DISETUJUI, terapkan ke data resmi, log `PENGAJUAN_DISETUJUI`. Diproses sekali (BR-08). Konflik = field di `data_lama` yang berbeda dari data warga sekarang: dilempar `KonflikPengajuan` kecuali `konfirmasiKonflik`; Server Action mengembalikan `konflik` dan klien meminta konfirmasi lalu mengirim ulang. Warga dihapus, tidak AKTIF (semua jenis kecuali tambah anggota), atau KK-nya dihapus = galat, bukan konflik. `data_baru` ubah data divalidasi ulang dengan `ubahSchema` sebelum ditulis. Tanggal kejadian harus tanggal kalender yang sah (`2026-02-31` ditolak). `tolakPengajuan`: alasan minimal 10 karakter (`tolakPengajuanSchema`).
+- BR-06 tidak butuh kode khusus: lapor pindah/meninggal untuk Kepala Keluarga membuat KK terhitung di `kualitasData().kkTanpaKepala`.
+- Log (`PENGAJUAN_DIBUAT|DIBATALKAN|DISETUJUI|DITOLAK`, entitas `pengajuan`) memuat jenis dan nama field, tidak nilainya; penolakan hanya mencatat `panjang_alasan` (teksnya ada di `alasan_penolakan`). Email (FR-PGJ-06): pengajuan baru ke Ketua RT aktif di RT-nya (`penerimaPengajuanBaru`, dipanggil `buatPengajuanAksi`), hasil ke warga pengaju (`penerimaHasilPengajuan`, dipanggil aksi setujui/tolak). Best-effort: gagal kirim hanya di-log `e.name`. Isi email memuat jenis dan nama, tidak NIK/No KK; alasan penolakan disensor dari angka 16 digit. Lampiran (FR-PGJ-07) ditunda.
+- Batas yang diketahui (hasil review keamanan, belum diperbaiki): pengajuan MENUNGGU ganda per anggota lolos bila dua permintaan datang bersamaan (cek hitung lalu buat, tanpa unique index), tambah anggota tanpa pencegah duplikat, pengecekan konflik BR-08 dibaca sebelum klaim tanpa kunci baris, `konfirmasiKonflik` berupa satu boolean, dan anggota KK mana pun boleh mengajukan untuk anggota lain.
+- Tes: `tests/integration/pengajuan.test.ts` (AC-06, cakupan, dan penerima email; RW `088`, NIK `99917...`, No KK `99918...`).
+
+### Email (`lib/email.ts`)
+
+- Satu pintu: `kirimEmail({ ke, subjek, tautan?, pesan? })`; templat pengajuan `kirimPengajuanBaru()` dan `kirimHasilPengajuan()` ada di berkas yang sama. Dev dan tes mencetak `[email-dev] ke=... | subjek` ke terminal; produksi `POST https://api.resend.com/emails` lewat `fetch` dan melempar error bila `RESEND_API_KEY`/`EMAIL_DARI` kosong atau Resend menolak.
+- Isi atau subjek berisi 16 digit berurutan ditolak (NIK/No KK tidak boleh ikut terkirim); alasan penolakan disensor lebih dulu.
+- Email pemberitahuan best-effort lewat fungsi `beritahu...`/`kirimAman` di `actions.ts` (try/catch, hanya `e.name` di-log), dipanggil sesudah data tersimpan. Penerima dicari di `lib/data/pengajuan.ts` (`penerimaPengajuanBaru`, `penerimaHasilPengajuan`) lewat `scopeWhere`.
+- Tes: `tests/unit/email.test.ts` memakai `vi.stubEnv("NODE_ENV", ...)` dan `vi.stubGlobal("fetch", ...)`.
+
+### Portal warga (`/beranda`, `/keluarga`, `/pengajuan-saya`, PRD 5.1)
+
+- Mobile-first, dalam `KerangkaWarga` (header dan navigasi bawah). Data dari `lib/data/portal.ts`: `keluargaSaya(user)` (KK dari `warga_id` dan anggotanya, tidak dihapus dan status AKTIF, kepala keluarga dulu lalu dari yang tertua) dan `pengajuanSaya(user, batas?)`. Keduanya lewat `scopeWhere` dan mengembalikan `null`/`[]` untuk peran selain WARGA.
+- No KK dimasking (`maskNomor`) sesuai mockup; NIK anggota tidak ditampilkan. Data lengkap tidak dikirim ke klien.
+- Tombol "Ajukan perubahan", "Tambah anggota", dan "Ajukan ubah data" menuju `/pengajuan-saya/baru` (query `warga` atau `jenis`); lihat "Pengajuan perubahan".
+- AC-05: tiap `page.tsx` di `(pengurus)` memanggil `requireRole(...PENGURUS|ADMIN)`; `tests/unit/ac05-halaman.test.ts` memeriksa itu secara statis (termasuk layout dan 403 di `/api/export`). Tes data: `tests/integration/portal.test.ts` (RW `089`, NIK `99915...`, No KK `99916...`).
+
 ### Cara menulis tes (pola yang ada)
 
 - Berkas di `tests/<jenis>/*.test.ts`; konfigurasi `vitest.config.mts` (alias `@` ke akar repo, `fileParallelism: false` karena semua tes integrasi memakai satu database).
@@ -226,6 +275,7 @@ Variabel lingkungan (`.env`, tidak di-commit; contoh di `.env.example`): `DATABA
 - Data uji memakai NIK/No KK berawalan `999` dan email `@contoh.test`; bukan data nyata.
 - Tes unit (`tests/unit/`) menguji skema Zod, normalisasi/validasi import, `bagiBatch`, `buatTemplate`/`buatDaftarGagal` (dibaca ulang dengan `parseBerkas`), `maskNomor`, `nikCocokTanggalLahir`, `parseFilter` dan `filterKeQuery`/`adaFilter`. Kasus import berupa CSV kecil di `tests/fixtures/import/`.
 - Tes integrasi import (`tests/integration/impor.test.ts`) memakai transaksi sungguhan, jadi membersihkan datanya sendiri: RW `097`, NIK berawalan `99900097`, No KK berawalan `99901097`, email `uji-impor-*@contoh.test`.
+- Tes modul besar (mis. `pengajuan.test.ts`, `pengguna.test.ts`) punya fungsi `siapkan(tx)` yang membuat wilayah, pengguna, KK, dan warga uji di RW khusus, dan `sebagai(user)` untuk mengubahnya menjadi `Pengguna`; tiap tes memanggilnya di dalam `dalamRollback()`.
 - Tes data modul (`kk`, `warga`, `pengaturan`) memanggil fungsi `lib/data/*` dengan `db` berupa transaksi dari `dalamRollback()`; tes Server Action (`pengaturan-aksi`) memalsukan `requireRole`.
 - Tes `requireRole` memalsukan `next/headers`, `next/navigation` (redirect melempar `REDIRECT:<url>`), dan `auth.api.getSession` dengan `vi.mock`/`vi.spyOn`; pengguna tetap dibuat di database sungguhan.
 - Tes cakupan membuat data lalu membatasi hasil dengan `id in [...]` agar data seed tidak ikut terhitung.
@@ -247,7 +297,7 @@ Asumsi di bawah dipakai agar pengembangan jalan. Setiap asumsi bisa berubah; jik
 | --- | --- |
 | Kolom dan jumlah baris Excel saat ini | Memakai kolom template PRD 7.2; perbedaan nama kolom dijembatani wizard mapping. Batas 5.000 baris per file. |
 | Satu RW atau beberapa RW | Satu RW (RW 03 di mockup). Model data tetap menyimpan `rw` dan `rt` lewat tabel `wilayah` agar bisa berkembang. |
-| Login dengan email atau nomor HP | Login dengan email saja; `no_hp` disimpan sebagai kontak opsional. OTP SMS/WhatsApp di luar lingkup v1. Kata sandi minimal 8 karakter (bawaan Better Auth; PRD tidak menyebut angkanya). |
+| Login dengan email atau nomor HP | Login dengan email saja; `no_hp` disimpan sebagai kontak opsional. OTP SMS/WhatsApp di luar lingkup v1. Kata sandi minimal 10 karakter (mockup Daftar akun warga; berlaku juga untuk reset sandi). |
 | Siapa Super Admin dan penanggung jawab data pribadi | Produksi: satu akun Super Admin dibuat dengan `pnpm db:create-admin` (menolak jalan bila Super Admin aktif sudah ada). Dev: seed membuat akun uji. Penanggung jawab data diisi pengurus sebelum peluncuran. |
 | Ketua RT atau Admin RW yang memverifikasi klaim dan pengajuan | Ketua RT untuk RT-nya; Admin RW dan Super Admin boleh menggantikan (sesuai matriks PRD 2.2). |
 | Foto KK/KTP wajib untuk perubahan NIK, nama, tanggal lahir | Tidak wajib; lampiran (FR-PGJ-07, Could) ditunda. |
@@ -256,7 +306,7 @@ Asumsi di bawah dipakai agar pengembangan jalan. Setiap asumsi bisa berubah; jik
 | Persetujuan kebijakan privasi oleh kelurahan/hukum | Halaman Kebijakan Privasi berisi draf; persetujuan pihak luar menjadi syarat peluncuran, bukan syarat pengembangan. |
 | Estimasi durasi fase | Tidak diestimasi sampai jumlah pengembang dan kolom Excel diketahui. |
 
-Asumsi teknis yang masih perlu dikonfirmasi saat pertama dipakai: alur wizard import dan halaman Dashboard/Cari Warga di browser belum dicoba manual. Sudah diputuskan dan dipakai: pnpm, Prisma, Better Auth, Docker Compose untuk database lokal, SheetJS untuk import dan export (ExcelJS tidak dipakai).
+Asumsi teknis yang masih perlu dikonfirmasi saat pertama dipakai: alur wizard import, Dashboard/Cari Warga, klaim akun, Pengguna, portal warga, dan pengajuan belum dicoba manual di browser; pengiriman Resend belum dicoba dengan kunci sungguhan. Sudah diputuskan dan dipakai: pnpm, Prisma, Better Auth, Docker Compose untuk database lokal, SheetJS untuk import dan export (ExcelJS tidak dipakai).
 
 ### Penyimpangan dari PRD bagian 8 yang sudah diterapkan
 
@@ -265,7 +315,7 @@ Asumsi teknis yang masih perlu dikonfirmasi saat pertama dipakai: alur wizard im
 - `users.image` ditambahkan karena diwajibkan Better Auth; aplikasi tidak memakainya.
 - Tabel `session`, `account`, `verification` ditambahkan (PRD 8 mengizinkan tabel pustaka sesi).
 - `cacheComponents` dan `partialPrefetching` dimatikan di `next.config.ts`; dengan opsi itu build gagal pada halaman yang membaca sesi.
-- Pengiriman email produksi belum ada (Resend belum dipasang); `kirimEmail()` melempar error di produksi.
+- Email produksi lewat API Resend (belum dicoba dengan kunci sungguhan); `kirimEmail()` melempar error bila belum dikonfigurasi.
 - Sesi berakhir setelah 30 menit tidak aktif lewat `session.expiresIn` + `updateAge` (FR-AUTH-04).
 - `activity_logs.user_id` nullable agar kejadian tanpa pengguna dikenal (login gagal) tercatat.
 
