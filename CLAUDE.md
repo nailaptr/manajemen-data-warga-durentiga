@@ -19,8 +19,8 @@ Aplikasi web ini mengganti pendataan warga di Excel untuk satu RW (RW 03) yang t
 | Zod | Satu skema validasi dipakai di browser dan di server, ditaruh di `lib/validators/` (kk, warga, pengaturan, impor). Server Action dan Route Handler tetap memvalidasi ulang. |
 | React Hook Form | Form besar tetap ringan dan terhubung ke skema Zod lewat `zodResolver`. Dipakai `kk/form-kk.tsx` (repeater `useFieldArray`) dan `warga/modal-warga.tsx`; tipe form `useForm<XInput, unknown, XData>` dengan `z.input` dan `z.output` dari skema. |
 | TanStack Table | Pagination, sorting, dan filter di server untuk tabel dengan ribuan baris. Terpasang versi 9 (`@tanstack/react-table`), API-nya beda dari v8: opsi `features: tableFeatures({ rowPaginationFeature })`, bukan `getCoreRowModel`. Dipakai lewat `DataTable` oleh `kk/tabel-kk.tsx` dan `warga/daftar-warga.tsx`. |
-| Recharts (belum dipasang) | Bar, donut, dan piramida penduduk di dashboard tanpa pustaka grafik tambahan. |
-| SheetJS (`xlsx` 0.20.3) / ExcelJS (belum dipasang) | SheetJS terpasang dari tarball resmi `cdn.sheetjs.com` (versi dipin, bukan dari npm) dan dipakai di browser oleh `lib/import/parse.ts` (membaca `.xlsx`/`.csv`) dan `lib/import/berkas.ts` (template dan daftar baris gagal). ExcelJS untuk export di server belum dipasang (asumsi sementara; lihat bagian 7). |
+| Recharts 3 | Bar, donut, dan piramida penduduk di dashboard tanpa pustaka grafik tambahan. Dipakai hanya di Client Component `components/grafik-*.tsx`; warna lewat `var(--color-...)`. |
+| SheetJS (`xlsx` 0.20.3) | Terpasang dari tarball resmi `cdn.sheetjs.com` (versi dipin, bukan dari npm). Dipakai di browser oleh `lib/import/parse.ts` (membaca `.xlsx`/`.csv`) dan `lib/import/berkas.ts` (template dan daftar baris gagal), dan di server oleh `lib/data/export.ts` (export Cari Warga). ExcelJS tidak dipakai. |
 | Resend (belum dipasang) | Email verifikasi akun, reset sandi, dan notifikasi pengajuan dengan konfigurasi minimal. Sementara `lib/email.ts` mencetak tautan ke terminal saat dev dan melempar error di produksi. |
 | Vitest | Tes aturan bisnis, parser filter, normalisasi import, dan tes integrasi ke Postgres lokal. |
 | Playwright (belum dipasang) | E2E untuk alur kritis dan tes otomatis cakupan data (SEC-04, AC-04, AC-05). |
@@ -45,12 +45,14 @@ app/
   (warga)/layout.tsx        # requireRole("WARGA") + KerangkaWarga (header + navigasi bawah)
   (warga)/beranda, keluarga, pengajuan-saya (baru)   # judul saja
   profil/                   # layout memilih kerangka pengurus atau warga menurut peran (PRD 5.1: "Semua")
-  api/auth/[...all]         # ada (handler Better Auth); api/import-batch ada (POST aksi mulai|proses|selesai); api/export belum
+  api/auth/[...all]         # ada (handler Better Auth); api/import-batch ada (POST aksi mulai|proses|selesai); api/export ada (GET, lihat "Cari Warga")
 components/
   kartu-form.tsx, tombol-keluar.tsx   # form publik, tombol Keluar (prop className)
   kerangka-pengurus.tsx, kerangka-warga.tsx   # kerangka halaman (klien, menu aktif lewat usePathname)
   judul-halaman.tsx                   # h1 + deskripsi opsional, dipakai semua halaman
   stat-card.tsx, status-badge.tsx, filter-chip.tsx, data-table.tsx   # komponen dasar
+  filter-statistik.tsx, pilihan-jamak.tsx   # kontrol filter (klien), URL sebagai sumber kebenaran; dipakai Dashboard dan Cari Warga; chip-filter-aktif.tsx
+  grafik-bar.tsx, grafik-piramida.tsx, grafik-donut.tsx   # grafik Recharts (klien); data datang dari Server Component
   ui/                                 # shadcn/ui, belum ada komponen
 lib/
   db.ts            # singleton PrismaClient (adapter pg), baca DATABASE_URL
@@ -61,8 +63,11 @@ lib/
   akun.ts          # buatAkunAktif(): satu-satunya jalan membuat akun berkata sandi (seed, skrip admin)
   email.ts         # kirimEmail()
   scope.ts         # scopeWhere(user, entity): cakupan RW/RT/KK; entity = "warga" | "kartu_keluarga" | "pengajuan"
-  filters.ts       # satu parser filter URL -> query                (belum)
-  data/            # satu-satunya tempat memanggil prisma.warga / prisma.kartuKeluarga: kk.ts, warga.ts, pengaturan.ts, impor.ts
+  filter-url.ts    # filterKeQuery(), adaFilter(): filter -> query URL, aman dipakai di browser
+  filter-ui.ts     # muatMaster(), susunFilterUi(): pilihan dan chip filter untuk Dashboard dan Cari Warga (server)
+  format.ts        # formatAngka(), formatPersen() (id-ID)
+  filters.ts       # parseFilter() (query string -> filter Zod), buildWargaWhere(filter, user), hariJakarta()
+  data/            # satu-satunya tempat memanggil prisma.warga / prisma.kartuKeluarga: kk.ts, warga.ts, pengaturan.ts, impor.ts, stats.ts (statistik dan daftar terfilter), export.ts
   import/          # fungsi murni tanpa DB/UI: parse.ts, normalize.ts, validate.ts, group.ts, mapping.ts (deteksiMapping, gabungkanMapping), batch.ts (bagiBatch, tidak memecah satu KK), berkas.ts (buatTemplate, buatDaftarGagal), index.ts (prosesImpor), types.ts
   validators/      # skema Zod bersama: kk.ts, warga.ts, pengaturan.ts, impor.ts
   activity-log.ts  # catatAktivitas(data, klien): penulisan activity_logs
@@ -71,6 +76,7 @@ lib/
 prisma/
   schema.prisma, migrations/
   seed.ts, seed-dev-users.ts   # master data + akun uji dev
+scripts/seed-uji.ts            # 10.000 warga fiktif (NIK/No KK berawalan 99908) untuk uji performa; hanya DB lokal
 prisma.config.ts               # skema, migrasi, perintah seed, DATABASE_URL
 generated/prisma/              # client Prisma (tidak di-commit)
 scripts/create-admin.ts        # Super Admin pertama (produksi)
@@ -102,6 +108,7 @@ Manajer paket: pnpm. Postgres lokal harus jalan sebelum `pnpm test` dan `pnpm db
 | Migrasi (produksi/CI) | `pnpm db:deploy` (`prisma migrate deploy`) |
 | Buat ulang client Prisma | `pnpm db:generate` (jalankan setelah mengubah `schema.prisma`; `migrate dev` tidak melakukannya) |
 | Seed (master data + akun uji dev) | `pnpm db:seed` |
+| 10.000 warga fiktif untuk uji performa | `pnpm db:seed:uji` (setelah `db:seed`; menolak jalan di produksi, DB non-lokal, atau bila data `99908*` sudah ada) |
 | Super Admin pertama | `ADMIN_NAMA=... ADMIN_EMAIL=... ADMIN_PASSWORD=... pnpm db:create-admin` |
 
 Variabel lingkungan (`.env`, tidak di-commit; contoh di `.env.example`): `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `SEED_DEV_PASSWORD` (min. 12 karakter; kosong berarti akun uji dilewati).
@@ -179,6 +186,28 @@ Variabel lingkungan (`.env`, tidak di-commit; contoh di `.env.example`): `DATABA
 - Pengaturan: master yang masih dipakai tidak bisa dihapus; Admin RW dibatasi ke RW-nya untuk RT/RW; kategori usia boleh tumpang tindih.
 - `hitungUsia()` ada di `lib/data/warga.ts`; kecocokan NIK dengan tanggal lahir hanya peringatan.
 
+### Filter dan statistik (`lib/filters.ts`, `lib/data/stats.ts`)
+
+- `parseFilter(searchParams)`: `pendidikan`, `pekerjaan`, `kategori` berisi uuid; `jk` L|P; `rt` kode 3 digit; `usia_min`/`usia_max` angka; nilai jamak dipisah koma. Tidak valid menghasilkan `{ ok: false, galat }`.
+- `buildWargaWhere(filter, user, {hariIni, db})` (async, membaca `kategori_usia`) dipakai untuk COUNT, daftar, dan semua agregasi. Hasilnya melewati `scopeWhere`, hanya warga AKTIF dan tidak dihapus, KK tidak dihapus. AND antar filter, OR dalam satu filter. Kategori usia boleh tumpang tindih; kategori ber-`jenis_kelamin` menambah kondisi jenis kelamin; id kategori yang tidak ada tidak cocok dengan apa pun.
+- Usia dalam tahun penuh (sama dengan `age()` PostgreSQL) dinyatakan sebagai rentang `tanggal_lahir`, tanpa `$queryRaw`. "Hari ini" memakai zona Asia/Jakarta (`hariJakarta()`); 29 Februari dijepit ke akhir bulan tujuan.
+- Fungsi `stats.ts` (`ringkasan`, `perPendidikan`, `perPekerjaan`, `piramida`, `perRt`, `hitungWarga`, `daftarWargaTerfilter`) mengembalikan angka seluruh warga dalam cakupan (`semua`) dan angka hasil filter (`terfilter`). `perPekerjaan`: 10 teratas menurut `semua`, sisanya dan "Lainnya" digabung. `perRt` menjalankan 2 hitungan per wilayah.
+
+### Dashboard (`/dashboard`)
+
+- `page.tsx` (Server Component) membaca `searchParams` lewat `parseFilter`, memanggil fungsi `lib/data/stats.ts` secara paralel, dan merender kartu, chip filter (`FilterChip`, `hrefHapus` = URL tanpa filter itu), panel Hasil Filter, serta grafik. Filter tidak valid diabaikan dengan pesan galat.
+- Ketua RT: parameter `rt` dibuang di server dan kontrol RT dinonaktifkan. Pilihan RT diambil dari `perRt` (hanya RT berwarga dalam cakupan).
+- `kualitasData(user)` untuk kartu kuning: warga aktif tanpa pekerjaan, KK tanpa Kepala Keluarga AKTIF (hanya KK yang masih punya warga aktif), pengajuan MENUNGGU. Selalu seluruh cakupan, tidak mengikuti filter; kartu hanya muncul bila jumlahnya lebih dari 0.
+- Grafik bar menumpuk bagian gelap (hasil filter) di atas sisa seluruh warga; tanpa filter semua bar gelap. Setiap grafik punya tabel `sr-only`.
+
+### Cari Warga (`/cari-warga`) dan export
+
+- Memakai filter yang sama dengan Dashboard: `FilterStatistik` (prop `tambahan` mempertahankan `q` saat filter berubah), `ChipFilterAktif`, dan `lib/filter-ui.ts` (`muatMaster`, `susunFilterUi`, `dua`, `labelRt`) menyusun pilihan dan chip untuk kedua halaman. Pilihan RT Cari Warga dari `daftarRtCakupan(user)`.
+- Pencarian teks `q` (nama, NIK, No KK) hanya ada di Cari Warga dan bukan bagian `filterSchema`: `whereCariWarga(user, filter, q)` di `lib/data/stats.ts` = `buildWargaWhere` + `kondisiCari(q)` (`lib/data/warga.ts`). Daftar, jumlah, dan export memakai fungsi itu. `q` tidak ikut tautan "Kembali ke dashboard" dan tidak pernah masuk log.
+- Tabel 25 baris per halaman (pagination server lewat `DataTable`), NIK dan No KK dimasking. Drawer (`drawer-warga.tsx`) memanggil Server Action `detailWargaAksi` (data dimasking) dan `tampilkanLengkapAksi` (NIK dan No KK penuh). Pembukaan penuh dicatat `NIK_DITAMPILKAN` (entitas `warga`, id warga, tanpa nomor) oleh `nomorLengkap()`.
+- Export: `GET /api/export?format=xlsx|csv&<filter>&q=` (`app/api/export/route.ts`) memanggil `exportWarga()` di `lib/data/export.ts`. Hanya `PENGURUS` (Warga 403); cakupan dari `scopeWhere`, jadi Ketua RT hanya RT-nya. Lebih dari `BATAS_EXPORT` (5.000) baris ditolak dengan status 422, bukan dipotong; hasil kosong juga ditolak. Setiap export berhasil dicatat `EXPORT_WARGA` (`perubahan`: format, jumlah, query filter, apakah memakai pencarian).
+- Export memuat NIK dan No KK penuh (tujuan export; dibatasi peran dan dicatat). Excel memakai SheetJS yang sudah terpasang (tanpa dependensi baru), semua sel bertipe teks. CSV memakai BOM UTF-8 dan sel berawalan `= + - @` diberi apostrof; batas CSV: Excel menampilkan NIK 16 digit sebagai angka ilmiah, jadi gunakan xlsx bila perlu.
+
 ### Import Excel (wizard `/import`)
 
 - Wizard di `app/(pengurus)/import/`: file diparse di browser, dikirim per batch 200 baris (`UKURAN_BATCH`) ke `POST /api/import-batch` dengan aksi `mulai`, `proses` per batch, lalu `selesai` (`lib/data/impor.ts`: `mulaiImpor`, `prosesBatch`, `selesaiImpor`). File tidak pernah disimpan di server. Template dan daftar baris gagal dibuat di browser.
@@ -193,13 +222,15 @@ Variabel lingkungan (`.env`, tidak di-commit; contoh di `.env.example`): `DATABA
 
 - Berkas di `tests/<jenis>/*.test.ts`; konfigurasi `vitest.config.mts` (alias `@` ke akar repo, `fileParallelism: false` karena semua tes integrasi memakai satu database).
 - Nama tes dalam Bahasa Indonesia, menyebut ID aturan PRD bila ada (contoh: "(BR-02)", "(FR-AUTH-04)").
-- Tes DB memakai transaksi yang selalu di-rollback (`dalamRollback()` di `tests/integration/db-constraints.test.ts`) agar database tetap bersih. Tes yang harus melewati transaksi sendiri (Better Auth) membuat data dengan email `@contoh.test`, dan menghapusnya di `beforeAll`/`afterAll`.
+- Tes DB memakai transaksi yang selalu di-rollback (`dalamRollback()` dan tipe `Tx` dari `tests/integration/helpers.ts`) agar database tetap bersih. Tes yang harus melewati transaksi sendiri (Better Auth) membuat data dengan email `@contoh.test`, dan menghapusnya di `beforeAll`/`afterAll`.
 - Data uji memakai NIK/No KK berawalan `999` dan email `@contoh.test`; bukan data nyata.
-- Tes unit (`tests/unit/`) menguji skema Zod, normalisasi/validasi import, `bagiBatch`, `buatTemplate`/`buatDaftarGagal` (dibaca ulang dengan `parseBerkas`), `maskNomor`, `nikCocokTanggalLahir`. Kasus import berupa CSV kecil di `tests/fixtures/import/`.
+- Tes unit (`tests/unit/`) menguji skema Zod, normalisasi/validasi import, `bagiBatch`, `buatTemplate`/`buatDaftarGagal` (dibaca ulang dengan `parseBerkas`), `maskNomor`, `nikCocokTanggalLahir`, `parseFilter` dan `filterKeQuery`/`adaFilter`. Kasus import berupa CSV kecil di `tests/fixtures/import/`.
 - Tes integrasi import (`tests/integration/impor.test.ts`) memakai transaksi sungguhan, jadi membersihkan datanya sendiri: RW `097`, NIK berawalan `99900097`, No KK berawalan `99901097`, email `uji-impor-*@contoh.test`.
 - Tes data modul (`kk`, `warga`, `pengaturan`) memanggil fungsi `lib/data/*` dengan `db` berupa transaksi dari `dalamRollback()`; tes Server Action (`pengaturan-aksi`) memalsukan `requireRole`.
 - Tes `requireRole` memalsukan `next/headers`, `next/navigation` (redirect melempar `REDIRECT:<url>`), dan `auth.api.getSession` dengan `vi.mock`/`vi.spyOn`; pengguna tetap dibuat di database sungguhan.
 - Tes cakupan membuat data lalu membatasi hasil dengan `id in [...]` agar data seed tidak ikut terhitung.
+- Tes filter, statistik, Cari Warga, dan export (`filters`, `stats-kualitas`, `cari-warga`) membuat wilayah di RW khusus uji (mis. `093`) di dalam `dalamRollback()`, sehingga hanya pengguna uji yang melihatnya; fungsi `lib/data/*` dipanggil dengan `{ db: tx }`.
+- Performa: dengan `pnpm db:seed:uji` (10.000 warga), query ringkasan Dashboard dan daftar Cari Warga diukur 7–35 ms di database (`EXPLAIN ANALYZE`), jauh di bawah batas 2 detik (NFR-01); index yang ada cukup dan belum ada cache.
 - Tes constraint memanggil SQL mentah untuk kasus yang ditolak Prisma sebelum sampai ke database (NIK bukan 16 digit, warga tanpa KK).
 
 ## 6. Definisi selesai
@@ -225,7 +256,7 @@ Asumsi di bawah dipakai agar pengembangan jalan. Setiap asumsi bisa berubah; jik
 | Persetujuan kebijakan privasi oleh kelurahan/hukum | Halaman Kebijakan Privasi berisi draf; persetujuan pihak luar menjadi syarat peluncuran, bukan syarat pengembangan. |
 | Estimasi durasi fase | Tidak diestimasi sampai jumlah pengembang dan kolom Excel diketahui. |
 
-Asumsi teknis yang masih perlu dikonfirmasi saat pertama dipakai: ExcelJS untuk export di server. SheetJS sudah dipakai di `lib/import/` dan wizard (alur di browser belum dicoba manual). Sudah diputuskan dan dipakai: pnpm, Prisma, Better Auth, Docker Compose untuk database lokal.
+Asumsi teknis yang masih perlu dikonfirmasi saat pertama dipakai: alur wizard import dan halaman Dashboard/Cari Warga di browser belum dicoba manual. Sudah diputuskan dan dipakai: pnpm, Prisma, Better Auth, Docker Compose untuk database lokal, SheetJS untuk import dan export (ExcelJS tidak dipakai).
 
 ### Penyimpangan dari PRD bagian 8 yang sudah diterapkan
 

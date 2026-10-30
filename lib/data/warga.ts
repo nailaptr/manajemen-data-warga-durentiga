@@ -2,6 +2,8 @@ import { Prisma, type PrismaClient } from "../../generated/prisma/client";
 import type { Pengguna } from "../auth";
 import { prisma } from "../db";
 import { catatAktivitas } from "../activity-log";
+import { hariJakarta } from "../filters";
+import { maskNomor } from "../mask";
 import { scopeWhere } from "../scope";
 import type { WargaData } from "../validators/warga";
 import { GalatKk, dataWarga } from "./kk";
@@ -29,6 +31,17 @@ export interface BarisWarga {
   status: "AKTIF" | "PINDAH" | "MENINGGAL";
 }
 
+// Pencarian nama, NIK, atau No KK; dipakai Data Warga dan Cari Warga.
+export function kondisiCari(q: string): Prisma.WargaWhereInput {
+  return {
+    OR: [
+      { nama_lengkap: { contains: q, mode: "insensitive" } },
+      { nik: { contains: q } },
+      { kartu_keluarga: { no_kk: { contains: q } } },
+    ],
+  };
+}
+
 function whereWarga(user: Pengguna, f: Pick<FilterWarga, "q" | "status">): Prisma.WargaWhereInput {
   const q = f.q?.trim();
   const sama: Prisma.WargaWhereInput[] = [
@@ -36,16 +49,84 @@ function whereWarga(user: Pengguna, f: Pick<FilterWarga, "q" | "status">): Prism
     { deleted_at: null, kartu_keluarga: { deleted_at: null } },
   ];
   if (f.status) sama.push({ status_kependudukan: f.status });
-  if (q) {
-    sama.push({
-      OR: [
-        { nama_lengkap: { contains: q, mode: "insensitive" } },
-        { nik: { contains: q } },
-        { kartu_keluarga: { no_kk: { contains: q } } },
-      ],
-    });
-  }
+  if (q) sama.push(kondisiCari(q));
   return { AND: sama };
+}
+
+export interface DetailWarga {
+  id: string;
+  nama_lengkap: string;
+  nik_masked: string;
+  no_kk_masked: string;
+  jenis_kelamin: "L" | "P";
+  tempat_lahir: string | null;
+  tanggal_lahir: string;
+  usia: number;
+  agama: string | null;
+  golongan_darah: string | null;
+  hubungan_keluarga: string;
+  status_perkawinan: string | null;
+  status_kependudukan: string;
+  pendidikan: string | null;
+  pekerjaan: string | null;
+  alamat: string;
+  rt: string;
+  rw: string;
+  kartu_keluarga_id: string;
+}
+
+const sertaDetail = {
+  kartu_keluarga: { select: { id: true, no_kk: true, alamat: true, wilayah: { select: { rt: true, rw: true } } } },
+  pendidikan: { select: { nama: true } },
+  pekerjaan: { select: { nama: true } },
+} satisfies Prisma.WargaInclude;
+
+// Detail untuk drawer Cari Warga: NIK dan No KK tetap dimasking (AC-07).
+export async function detailWarga(user: Pengguna, id: string, db: Klien = prisma): Promise<DetailWarga | null> {
+  const w = await db.warga.findFirst({
+    where: { AND: [scopeWhere(user, "warga"), { id, deleted_at: null, kartu_keluarga: { deleted_at: null } }] },
+    include: sertaDetail,
+  });
+  if (!w) return null;
+  return {
+    id: w.id,
+    nama_lengkap: w.nama_lengkap,
+    nik_masked: maskNomor(w.nik),
+    no_kk_masked: maskNomor(w.kartu_keluarga.no_kk),
+    jenis_kelamin: w.jenis_kelamin,
+    tempat_lahir: w.tempat_lahir,
+    tanggal_lahir: w.tanggal_lahir.toISOString().slice(0, 10),
+    usia: hitungUsia(w.tanggal_lahir, hariJakarta()),
+    agama: w.agama,
+    golongan_darah: w.golongan_darah,
+    hubungan_keluarga: w.hubungan_keluarga,
+    status_perkawinan: w.status_perkawinan,
+    status_kependudukan: w.status_kependudukan,
+    pendidikan: w.pendidikan?.nama ?? null,
+    pekerjaan: w.pekerjaan?.nama ?? null,
+    alamat: w.kartu_keluarga.alamat,
+    rt: w.kartu_keluarga.wilayah.rt,
+    rw: w.kartu_keluarga.wilayah.rw,
+    kartu_keluarga_id: w.kartu_keluarga.id,
+  };
+}
+
+// Membuka NIK dan No KK penuh: hanya dalam cakupan pengguna, dan setiap pembukaan dicatat (AC-07, FR-LOG-01).
+// Log hanya memuat id warga, tidak memuat nomornya.
+export async function nomorLengkap(
+  user: Pengguna,
+  id: string,
+  db: Klien = prisma,
+): Promise<{ nik: string; no_kk: string } | null> {
+  return jalankan(db, async (tx) => {
+    const w = await tx.warga.findFirst({
+      where: { AND: [scopeWhere(user, "warga"), { id, deleted_at: null, kartu_keluarga: { deleted_at: null } }] },
+      select: { id: true, nik: true, kartu_keluarga: { select: { no_kk: true } } },
+    });
+    if (!w) return null;
+    await catatAktivitas({ userId: user.id, aksi: "NIK_DITAMPILKAN", entitas: "warga", entitasId: w.id }, tx);
+    return { nik: w.nik, no_kk: w.kartu_keluarga.no_kk };
+  });
 }
 
 // Usia dihitung dari tanggal_lahir (tidak disimpan), memakai tanggal UTC karena kolomnya @db.Date.

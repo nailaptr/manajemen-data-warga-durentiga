@@ -21,6 +21,11 @@
   --color-galat-latar: #fde4e1;
   --color-nonaktif-latar: #e2e8eb;
 
+  /* Grafik Dashboard: hasil filter memakai teal; seluruh warga teal pucat di atas jalur abu. */
+  --color-grafik-semua: #a9d3dc;
+  --color-grafik-jalur: #e6edf0;
+  --color-laki: #f0c8a8;
+
   --color-background: var(--color-latar);
   --color-foreground: var(--color-teks);
   --color-card: #ffffff;

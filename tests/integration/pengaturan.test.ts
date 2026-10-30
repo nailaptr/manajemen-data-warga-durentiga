@@ -56,7 +56,8 @@ describe("Pengaturan (integrasi)", () => {
   it("menolak menghapus pendidikan yang masih dipakai warga dan mencatat log saat berhasil", () =>
     dalamRollback(async (tx) => {
       const admin = await pengguna(tx, "penguji-set-2@contoh.test", "SUPER_ADMIN");
-      const dipakai = await tx.refPendidikan.findFirstOrThrow();
+      // Master milik tes sendiri: master seed bisa sudah dipakai ribuan warga (db:seed:uji).
+      const dipakai = await tx.refPendidikan.create({ data: { nama: "Pendidikan Dipakai Uji", urutan: 997 } });
       await buatKkDiRt(tx, admin, "9990000000970010", "9990000000970011", dipakai.id);
       await expect(hapusPendidikan(admin, dipakai.id, tx)).rejects.toThrow(new GalatPengaturan("Pendidikan masih dipakai 1 warga"));
 
